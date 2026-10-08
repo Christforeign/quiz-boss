@@ -53,7 +53,7 @@ function Home() {
               to="/play/$category"
               params={{ category: c.id }}
               style={{ animationDelay: `${i * 60}ms` }}
-              className={`${c.grad} group relative flex aspect-[4/3] flex-col justify-end overflow-hidden rounded-2xl p-4 text-secondary-foreground shadow-lg transition-transform animate-pop hover:-translate-y-1 active:scale-95 ${c.id === "mix" ? "col-span-2 aspect-[3/1]" : ""}`}
+              className={`${c.grad} group relative flex flex-col justify-end overflow-hidden rounded-2xl p-4 text-secondary-foreground shadow-lg transition-transform animate-pop hover:-translate-y-1 active:scale-95 ${c.id === "mix" ? "col-span-2 aspect-[3/1]" : "aspect-[4/3]"}`}
             >
               <span className="absolute right-3 top-2 text-5xl transition-transform group-hover:scale-125 group-hover:rotate-12">{c.emoji}</span>
               <span className="text-lg font-extrabold leading-tight drop-shadow">{c.label}</span>
@@ -64,6 +64,7 @@ function Home() {
       </section>
 
       <AdSlot slot="home-bottom" />
+      <p className="text-center text-xs text-muted-foreground"><Link to="/admin" className="hover:text-foreground">Espace administrateur</Link></p>
     </div>
   );
 }
