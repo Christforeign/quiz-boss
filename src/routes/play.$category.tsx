@@ -33,7 +33,7 @@ function shuffle<T>(a: T[]) {
   const b = [...a];
   for (let i = b.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
-    [b[i], b[j]] = [b[j], b[i]];
+    [b[i], b[j]] = [b[j] as T, b[i] as T];
   }
   return b;
 }
@@ -51,7 +51,7 @@ function Play() {
       const { data } = await q;
       return shuffle((data ?? []) as Q[]).slice(0, ROUND).map((x) => {
         const order = shuffle(x.options.map((_, i) => i));
-        return { ...x, options: order.map((i) => x.options[i]), correct_index: order.indexOf(x.correct_index) };
+        return { ...x, options: order.map((i) => x.options[i] as string), correct_index: order.indexOf(x.correct_index) };
       });
     },
   });
@@ -71,7 +71,7 @@ function Game({ questions, cat, onReplay }: { questions: Q[]; cat: (typeof CATEG
   const [floater, setFloater] = useState<string | null>(null);
   const [done, setDone] = useState(false);
   const startLevel = useRef(levelFromXp(getPlayer().xp));
-  const q = questions[idx];
+  const q = questions[idx]!;
 
   useEffect(() => {
     if (picked !== null || done) return;

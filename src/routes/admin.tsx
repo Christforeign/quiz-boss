@@ -68,7 +68,7 @@ function Login() {
         ? await supabase.auth.signInWithPassword({ email, password })
         : await supabase.auth.signUp({ email, password, options: { emailRedirectTo: `${window.location.origin}/admin` } });
     setBusy(false);
-    if (error) return toast.error(error.message);
+    if (error) return void toast.error(error.message);
     if (mode === "up" && !data.session) toast.success("Vérifie ta boîte mail pour confirmer le compte.");
   };
   return (
@@ -144,7 +144,8 @@ function Dashboard({ email }: { email: string }) {
 }
 
 type Field = { k: string; label: string; long?: boolean; list?: boolean; num?: boolean; bool?: boolean };
-type Row = Record<string, any>;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Row = any;
 type CrudTable = "questions" | "quotes" | "banners" | "embeds";
 
 function Crud({ table, fields, title, sub }: { table: CrudTable; fields: Field[]; title: (r: Row) => string; sub: (r: Row) => string }) {
@@ -163,7 +164,7 @@ function Crud({ table, fields, title, sub }: { table: CrudTable; fields: Field[]
     }
     const q = edit!.id ? supabase.from(table).update(payload as never).eq("id", edit!.id) : supabase.from(table).insert(payload as never);
     const { error } = await q;
-    if (error) return toast.error(error.message);
+    if (error) return void toast.error(error.message);
     toast.success("Enregistré");
     setEdit(null);
     qc.invalidateQueries();
@@ -215,14 +216,14 @@ function Withdrawals() {
   });
   const setStatus = async (id: string, status: string) => {
     const { error } = await supabase.from("withdrawals").update({ status }).eq("id", id);
-    if (error) return toast.error(error.message);
+    if (error) return void toast.error(error.message);
     qc.invalidateQueries({ queryKey: ["admin", "withdrawals"] });
   };
   const list = data.filter((w) => filter === "all" || w.status === filter);
   return (
     <div className="space-y-3 pt-2">
       <div className="flex gap-2">
-        {[["pending", "En attente"], ["approved", "Validées"], ["rejected", "Refusées"], ["all", "Toutes"]].map(([k, l]) => (
+        {([["pending", "En attente"], ["approved", "Validées"], ["rejected", "Refusées"], ["all", "Toutes"]] as const).map(([k, l]) => (
           <button key={k} onClick={() => setFilter(k)} className={`rounded-full px-3 py-1 text-xs font-semibold ${filter === k ? "bg-primary text-primary-foreground" : "bg-card"}`}>{l}</button>
         ))}
       </div>
@@ -261,9 +262,9 @@ function Notifs() {
     queryFn: async () => (await supabase.from("notifications").select("*").order("created_at", { ascending: false }).limit(20)).data ?? [],
   });
   const send = async () => {
-    if (!f.title.trim() || !f.body.trim()) return toast.error("Titre et message requis");
+    if (!f.title.trim() || !f.body.trim()) return void toast.error("Titre et message requis");
     const { error } = await supabase.from("notifications").insert({ title: f.title.trim(), body: f.body.trim(), url: f.url.trim() || null });
-    if (error) return toast.error(error.message);
+    if (error) return void toast.error(error.message);
     toast.success("Notification envoyée");
     setF({ title: "", body: "", url: "" });
     qc.invalidateQueries({ queryKey: ["admin", "notifications"] });

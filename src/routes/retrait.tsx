@@ -33,16 +33,16 @@ function Retrait() {
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     const amount = parseInt(form.amount, 10);
-    if (!form.full_name.trim() || !form.contact.trim() || !form.account.trim()) return toast.error("Remplis tous les champs");
-    if (!amount || amount < WITHDRAW_MIN_COINS) return toast.error(`Minimum ${WITHDRAW_MIN_COINS} pièces`);
-    if (amount > p.coins) return toast.error("Solde insuffisant");
+    if (!form.full_name.trim() || !form.contact.trim() || !form.account.trim()) return void toast.error("Remplis tous les champs");
+    if (!amount || amount < WITHDRAW_MIN_COINS) return void toast.error(`Minimum ${WITHDRAW_MIN_COINS} pièces`);
+    if (amount > p.coins) return void toast.error("Solde insuffisant");
     setBusy(true);
     const { error } = await supabase.from("withdrawals").insert({
       player_id: p.id, full_name: form.full_name.trim().slice(0, 100), contact: form.contact.trim().slice(0, 100),
       account: form.account.trim().slice(0, 200), method, amount, level,
     });
     setBusy(false);
-    if (error) return toast.error("Envoi impossible, réessaie.");
+    if (error) return void toast.error("Envoi impossible, réessaie.");
     updatePlayer((x) => ({ coins: x.coins - amount }));
     setForm({ full_name: "", contact: "", account: "", amount: "" });
     toast.success("Demande envoyée ! Elle sera validée manuellement sous 48 h.");

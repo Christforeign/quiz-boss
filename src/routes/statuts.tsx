@@ -50,7 +50,7 @@ async function render(q: { content: string; author: string | null; emoji: string
   const c = document.createElement("canvas");
   c.width = 1080; c.height = 1920;
   const ctx = c.getContext("2d")!;
-  const [a, b] = GRADS[q.theme] ?? GRADS.sunset;
+  const [a, b] = GRADS[q.theme] ?? (["#ef5a3c", "#f2b33d"] as [string, string]);
   const g = ctx.createLinearGradient(0, 0, 1080, 1920);
   g.addColorStop(0, a); g.addColorStop(1, b);
   ctx.fillStyle = g; ctx.fillRect(0, 0, 1080, 1920);
