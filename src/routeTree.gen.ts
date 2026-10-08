@@ -11,10 +11,14 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AdminRouteImport } from './routes/admin'
+import { Route as AuthRouteImport } from './routes/auth'
+import { Route as ConditionsRouteImport } from './routes/conditions'
 import { Route as ExplorerRouteImport } from './routes/explorer'
+import { Route as FaqRouteImport } from './routes/faq'
 import { Route as InviteRouteImport } from './routes/invite'
 import { Route as RetraitRouteImport } from './routes/retrait'
 import { Route as StatutsRouteImport } from './routes/statuts'
+import { Route as PSlugRouteImport } from './routes/p.$slug'
 import { Route as PlayCategoryRouteImport } from './routes/play.$category'
 
 const IndexRoute = IndexRouteImport.update({
@@ -27,9 +31,24 @@ const AdminRoute = AdminRouteImport.update({
   path: '/admin',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AuthRoute = AuthRouteImport.update({
+  id: '/auth',
+  path: '/auth',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ConditionsRoute = ConditionsRouteImport.update({
+  id: '/conditions',
+  path: '/conditions',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ExplorerRoute = ExplorerRouteImport.update({
   id: '/explorer',
   path: '/explorer',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const FaqRoute = FaqRouteImport.update({
+  id: '/faq',
+  path: '/faq',
   getParentRoute: () => rootRouteImport,
 } as any)
 const InviteRoute = InviteRouteImport.update({
@@ -47,6 +66,11 @@ const StatutsRoute = StatutsRouteImport.update({
   path: '/statuts',
   getParentRoute: () => rootRouteImport,
 } as any)
+const PSlugRoute = PSlugRouteImport.update({
+  id: '/p/$slug',
+  path: '/p/$slug',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const PlayCategoryRoute = PlayCategoryRouteImport.update({
   id: '/play/$category',
   path: '/play/$category',
@@ -56,29 +80,41 @@ const PlayCategoryRoute = PlayCategoryRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/admin': typeof AdminRoute
+  '/auth': typeof AuthRoute
+  '/conditions': typeof ConditionsRoute
   '/explorer': typeof ExplorerRoute
+  '/faq': typeof FaqRoute
   '/invite': typeof InviteRoute
   '/retrait': typeof RetraitRoute
   '/statuts': typeof StatutsRoute
+  '/p/$slug': typeof PSlugRoute
   '/play/$category': typeof PlayCategoryRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/admin': typeof AdminRoute
+  '/auth': typeof AuthRoute
+  '/conditions': typeof ConditionsRoute
   '/explorer': typeof ExplorerRoute
+  '/faq': typeof FaqRoute
   '/invite': typeof InviteRoute
   '/retrait': typeof RetraitRoute
   '/statuts': typeof StatutsRoute
+  '/p/$slug': typeof PSlugRoute
   '/play/$category': typeof PlayCategoryRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/admin': typeof AdminRoute
+  '/auth': typeof AuthRoute
+  '/conditions': typeof ConditionsRoute
   '/explorer': typeof ExplorerRoute
+  '/faq': typeof FaqRoute
   '/invite': typeof InviteRoute
   '/retrait': typeof RetraitRoute
   '/statuts': typeof StatutsRoute
+  '/p/$slug': typeof PSlugRoute
   '/play/$category': typeof PlayCategoryRoute
 }
 export interface FileRouteTypes {
@@ -86,38 +122,54 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/admin'
+    | '/auth'
+    | '/conditions'
     | '/explorer'
+    | '/faq'
     | '/invite'
     | '/retrait'
     | '/statuts'
+    | '/p/$slug'
     | '/play/$category'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/admin'
+    | '/auth'
+    | '/conditions'
     | '/explorer'
+    | '/faq'
     | '/invite'
     | '/retrait'
     | '/statuts'
+    | '/p/$slug'
     | '/play/$category'
   id:
     | '__root__'
     | '/'
     | '/admin'
+    | '/auth'
+    | '/conditions'
     | '/explorer'
+    | '/faq'
     | '/invite'
     | '/retrait'
     | '/statuts'
+    | '/p/$slug'
     | '/play/$category'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AdminRoute: typeof AdminRoute
+  AuthRoute: typeof AuthRoute
+  ConditionsRoute: typeof ConditionsRoute
   ExplorerRoute: typeof ExplorerRoute
+  FaqRoute: typeof FaqRoute
   InviteRoute: typeof InviteRoute
   RetraitRoute: typeof RetraitRoute
   StatutsRoute: typeof StatutsRoute
+  PSlugRoute: typeof PSlugRoute
   PlayCategoryRoute: typeof PlayCategoryRoute
 }
 
@@ -137,11 +189,32 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/auth': {
+      id: '/auth'
+      path: '/auth'
+      fullPath: '/auth'
+      preLoaderRoute: typeof AuthRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/conditions': {
+      id: '/conditions'
+      path: '/conditions'
+      fullPath: '/conditions'
+      preLoaderRoute: typeof ConditionsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/explorer': {
       id: '/explorer'
       path: '/explorer'
       fullPath: '/explorer'
       preLoaderRoute: typeof ExplorerRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/faq': {
+      id: '/faq'
+      path: '/faq'
+      fullPath: '/faq'
+      preLoaderRoute: typeof FaqRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/invite': {
@@ -165,6 +238,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof StatutsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/p/$slug': {
+      id: '/p/$slug'
+      path: '/p/$slug'
+      fullPath: '/p/$slug'
+      preLoaderRoute: typeof PSlugRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/play/$category': {
       id: '/play/$category'
       path: '/play/$category'
@@ -178,10 +258,14 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AdminRoute: AdminRoute,
+  AuthRoute: AuthRoute,
+  ConditionsRoute: ConditionsRoute,
   ExplorerRoute: ExplorerRoute,
+  FaqRoute: FaqRoute,
   InviteRoute: InviteRoute,
   RetraitRoute: RetraitRoute,
   StatutsRoute: StatutsRoute,
+  PSlugRoute: PSlugRoute,
   PlayCategoryRoute: PlayCategoryRoute,
 }
 export const routeTree = rootRouteImport
