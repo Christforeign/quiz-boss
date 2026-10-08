@@ -2,7 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { Lock, Wallet } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
-import { levelFromXp, updatePlayer, usePlayer, WITHDRAW_MIN_COINS, WITHDRAW_MIN_LEVEL } from "@/lib/player";
+import { levelFromXp, updatePlayer, usePlayer, useSession, WITHDRAW_MIN_COINS, WITHDRAW_MIN_LEVEL } from "@/lib/player";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -24,6 +24,7 @@ const METHODS = ["MonCash", "Natcash", "PayPal", "Virement"];
 
 function Retrait() {
   const p = usePlayer();
+  const session = useSession();
   const level = levelFromXp(p.xp);
   const unlocked = level >= WITHDRAW_MIN_LEVEL;
   const [method, setMethod] = useState("MonCash");
@@ -38,7 +39,7 @@ function Retrait() {
     if (amount > p.coins) return void toast.error("Solde insuffisant");
     setBusy(true);
     const { error } = await supabase.from("withdrawals").insert({
-      player_id: p.id, full_name: form.full_name.trim().slice(0, 100), contact: form.contact.trim().slice(0, 100),
+      player_id: p.id, user_id: session?.user.id ?? null, full_name: form.full_name.trim().slice(0, 100), contact: form.contact.trim().slice(0, 100),
       account: form.account.trim().slice(0, 200), method, amount, level,
     });
     setBusy(false);
@@ -56,7 +57,14 @@ function Retrait() {
         <p className="text-sm text-muted-foreground">Solde : <b className="text-accent">{p.coins} pièces</b> · Minimum {WITHDRAW_MIN_COINS}</p>
       </div>
 
-      {!unlocked ? (
+      {!session ? (
+        <div className="rounded-2xl border border-border bg-card p-6 text-center">
+          <Lock className="mx-auto h-10 w-10 text-muted-foreground" />
+          <p className="mt-3 font-bold">Connecte-toi pour demander un retrait</p>
+          <p className="text-sm text-muted-foreground">Ton compte protège tes pièces et ton historique.</p>
+          <Button asChild className="mt-4"><Link to="/auth">Se connecter / S'inscrire</Link></Button>
+        </div>
+      ) : !unlocked ? (
         <div className="rounded-2xl border border-border bg-card p-6 text-center">
           <Lock className="mx-auto h-10 w-10 text-muted-foreground" />
           <p className="mt-3 font-bold">Débloqué au niveau {WITHDRAW_MIN_LEVEL}</p>
