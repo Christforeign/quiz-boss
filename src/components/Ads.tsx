@@ -1,9 +1,25 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
+import { useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { useSettings } from "@/lib/site";
 
-/** Reserved slot for AdSense / partner networks. Paste the network snippet here once approved. */
+declare global { interface Window { adsbygoogle?: unknown[] } }
+
+/** Ad slot: shows AdSense automatically once the publisher ID is set in Admin → Réglages. */
 export function AdSlot({ slot, className = "" }: { slot: string; className?: string }) {
+  const { data } = useSettings();
+  const client = data?.["adsense_client"]?.trim();
+  const adSlot = data?.["adsense_slot"]?.trim();
+  useEffect(() => {
+    if (!client) return;
+    try { (window.adsbygoogle = window.adsbygoogle || []).push({}); } catch { /* not ready */ }
+  }, [client]);
+  if (client)
+    return (
+      <ins className={`adsbygoogle block min-h-[70px] ${className}`} style={{ display: "block" }}
+        data-ad-client={client} data-ad-slot={adSlot || undefined} data-ad-format="auto" data-full-width-responsive="true" data-slot-name={slot} />
+    );
   return (
     <div
       data-ad-slot={slot}
