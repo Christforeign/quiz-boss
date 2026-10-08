@@ -14,6 +14,24 @@ export type Database = {
   }
   public: {
     Tables: {
+      app_settings: {
+        Row: {
+          key: string
+          updated_at: string
+          value: string | null
+        }
+        Insert: {
+          key: string
+          updated_at?: string
+          value?: string | null
+        }
+        Update: {
+          key?: string
+          updated_at?: string
+          value?: string | null
+        }
+        Relationships: []
+      }
       banners: {
         Row: {
           active: boolean
@@ -44,6 +62,39 @@ export type Database = {
           link_url?: string | null
           placement?: string
           title?: string
+        }
+        Relationships: []
+      }
+      custom_pages: {
+        Row: {
+          body: string | null
+          html: string | null
+          image_url: string | null
+          mode: string
+          slug: string
+          status: string
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          body?: string | null
+          html?: string | null
+          image_url?: string | null
+          mode?: string
+          slug: string
+          status?: string
+          title?: string
+          updated_at?: string
+        }
+        Update: {
+          body?: string | null
+          html?: string | null
+          image_url?: string | null
+          mode?: string
+          slug?: string
+          status?: string
+          title?: string
+          updated_at?: string
         }
         Relationships: []
       }
@@ -95,6 +146,42 @@ export type Database = {
         }
         Relationships: []
       }
+      profiles: {
+        Row: {
+          best_score: number
+          coins: number
+          device_id: string | null
+          display_name: string | null
+          games_played: number
+          id: string
+          referral_claimed: number
+          updated_at: string
+          xp: number
+        }
+        Insert: {
+          best_score?: number
+          coins?: number
+          device_id?: string | null
+          display_name?: string | null
+          games_played?: number
+          id: string
+          referral_claimed?: number
+          updated_at?: string
+          xp?: number
+        }
+        Update: {
+          best_score?: number
+          coins?: number
+          device_id?: string | null
+          display_name?: string | null
+          games_played?: number
+          id?: string
+          referral_claimed?: number
+          updated_at?: string
+          xp?: number
+        }
+        Relationships: []
+      }
       push_subscribers: {
         Row: {
           created_at: string
@@ -119,6 +206,7 @@ export type Database = {
           correct_index: number
           created_at: string
           id: string
+          image_url: string | null
           lang: string
           options: string[]
           question: string
@@ -128,6 +216,7 @@ export type Database = {
           correct_index?: number
           created_at?: string
           id?: string
+          image_url?: string | null
           lang?: string
           options: string[]
           question: string
@@ -137,6 +226,7 @@ export type Database = {
           correct_index?: number
           created_at?: string
           id?: string
+          image_url?: string | null
           lang?: string
           options?: string[]
           question?: string
@@ -194,6 +284,56 @@ export type Database = {
         }
         Relationships: []
       }
+      sticker_packs: {
+        Row: {
+          category: string
+          created_at: string
+          id: string
+          name: string
+        }
+        Insert: {
+          category?: string
+          created_at?: string
+          id?: string
+          name: string
+        }
+        Update: {
+          category?: string
+          created_at?: string
+          id?: string
+          name?: string
+        }
+        Relationships: []
+      }
+      stickers: {
+        Row: {
+          created_at: string
+          id: string
+          image_url: string
+          pack_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          image_url: string
+          pack_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          image_url?: string
+          pack_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "stickers_pack_id_fkey"
+            columns: ["pack_id"]
+            isOneToOne: false
+            referencedRelation: "sticker_packs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_roles: {
         Row: {
           id: string
@@ -224,6 +364,7 @@ export type Database = {
           method: string
           player_id: string
           status: string
+          user_id: string | null
         }
         Insert: {
           account: string
@@ -236,6 +377,7 @@ export type Database = {
           method: string
           player_id: string
           status?: string
+          user_id?: string | null
         }
         Update: {
           account?: string
@@ -248,6 +390,7 @@ export type Database = {
           method?: string
           player_id?: string
           status?: string
+          user_id?: string | null
         }
         Relationships: []
       }

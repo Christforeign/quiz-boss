@@ -15,6 +15,13 @@
       "when": 1791494032061,
       "tag": "0001_migration",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1791495674846,
+      "tag": "0002_profiles_stickers_pages_settings",
+      "breakpoints": true
     }
   ]
 }
