@@ -10,33 +10,115 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AdminRouteImport } from './routes/admin'
+import { Route as ExplorerRouteImport } from './routes/explorer'
+import { Route as InviteRouteImport } from './routes/invite'
+import { Route as RetraitRouteImport } from './routes/retrait'
+import { Route as StatutsRouteImport } from './routes/statuts'
+import { Route as PlayCategoryRouteImport } from './routes/play.$category'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AdminRoute = AdminRouteImport.update({
+  id: '/admin',
+  path: '/admin',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ExplorerRoute = ExplorerRouteImport.update({
+  id: '/explorer',
+  path: '/explorer',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const InviteRoute = InviteRouteImport.update({
+  id: '/invite',
+  path: '/invite',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RetraitRoute = RetraitRouteImport.update({
+  id: '/retrait',
+  path: '/retrait',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const StatutsRoute = StatutsRouteImport.update({
+  id: '/statuts',
+  path: '/statuts',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PlayCategoryRoute = PlayCategoryRouteImport.update({
+  id: '/play/$category',
+  path: '/play/$category',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/admin': typeof AdminRoute
+  '/explorer': typeof ExplorerRoute
+  '/invite': typeof InviteRoute
+  '/retrait': typeof RetraitRoute
+  '/statuts': typeof StatutsRoute
+  '/play/$category': typeof PlayCategoryRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/admin': typeof AdminRoute
+  '/explorer': typeof ExplorerRoute
+  '/invite': typeof InviteRoute
+  '/retrait': typeof RetraitRoute
+  '/statuts': typeof StatutsRoute
+  '/play/$category': typeof PlayCategoryRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/admin': typeof AdminRoute
+  '/explorer': typeof ExplorerRoute
+  '/invite': typeof InviteRoute
+  '/retrait': typeof RetraitRoute
+  '/statuts': typeof StatutsRoute
+  '/play/$category': typeof PlayCategoryRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/'
+  fullPaths:
+    | '/'
+    | '/admin'
+    | '/explorer'
+    | '/invite'
+    | '/retrait'
+    | '/statuts'
+    | '/play/$category'
   fileRoutesByTo: FileRoutesByTo
-  to: '/'
-  id: '__root__' | '/'
+  to:
+    | '/'
+    | '/admin'
+    | '/explorer'
+    | '/invite'
+    | '/retrait'
+    | '/statuts'
+    | '/play/$category'
+  id:
+    | '__root__'
+    | '/'
+    | '/admin'
+    | '/explorer'
+    | '/invite'
+    | '/retrait'
+    | '/statuts'
+    | '/play/$category'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AdminRoute: typeof AdminRoute
+  ExplorerRoute: typeof ExplorerRoute
+  InviteRoute: typeof InviteRoute
+  RetraitRoute: typeof RetraitRoute
+  StatutsRoute: typeof StatutsRoute
+  PlayCategoryRoute: typeof PlayCategoryRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -48,11 +130,59 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/admin': {
+      id: '/admin'
+      path: '/admin'
+      fullPath: '/admin'
+      preLoaderRoute: typeof AdminRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/explorer': {
+      id: '/explorer'
+      path: '/explorer'
+      fullPath: '/explorer'
+      preLoaderRoute: typeof ExplorerRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/invite': {
+      id: '/invite'
+      path: '/invite'
+      fullPath: '/invite'
+      preLoaderRoute: typeof InviteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/retrait': {
+      id: '/retrait'
+      path: '/retrait'
+      fullPath: '/retrait'
+      preLoaderRoute: typeof RetraitRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/statuts': {
+      id: '/statuts'
+      path: '/statuts'
+      fullPath: '/statuts'
+      preLoaderRoute: typeof StatutsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/play/$category': {
+      id: '/play/$category'
+      path: '/play/$category'
+      fullPath: '/play/$category'
+      preLoaderRoute: typeof PlayCategoryRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AdminRoute: AdminRoute,
+  ExplorerRoute: ExplorerRoute,
+  InviteRoute: InviteRoute,
+  RetraitRoute: RetraitRoute,
+  StatutsRoute: StatutsRoute,
+  PlayCategoryRoute: PlayCategoryRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
