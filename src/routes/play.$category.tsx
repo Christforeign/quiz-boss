@@ -27,7 +27,7 @@ export const Route = createFileRoute("/play/$category")({
 const TIME = 15;
 const ROUND = 10;
 
-type Q = { id: string; question: string; options: string[]; correct_index: number; lang: string };
+type Q = { id: string; question: string; options: string[]; correct_index: number; lang: string; image_url: string | null };
 
 function shuffle<T>(a: T[]) {
   const b = [...a];
@@ -46,7 +46,7 @@ function Play() {
     queryKey: ["questions", category, round],
     staleTime: Infinity,
     queryFn: async () => {
-      let q = supabase.from("questions").select("id,question,options,correct_index,lang");
+      let q = supabase.from("questions").select("id,question,options,correct_index,lang,image_url");
       if (category !== "mix") q = q.eq("category", category);
       const { data } = await q;
       return shuffle((data ?? []) as Q[]).slice(0, ROUND).map((x) => {
@@ -84,14 +84,14 @@ function Game({ questions, cat, onReplay }: { questions: Q[]; cat: (typeof CATEG
     if (picked !== null) return;
     setPicked(i);
     if (i === q.correct_index) {
-      const pts = 100 + time * 10;
-      const coins = COINS_PER_CORRECT + Math.floor(time / 5);
+      const pts = 50 + time * 3;
+      const coins = COINS_PER_CORRECT + (time >= 10 ? 1 : 0);
       setScore((s) => s + pts);
       setCorrect((c) => c + 1);
-      setGain((g) => ({ coins: g.coins + coins, xp: g.xp + 20 + time }));
+      setGain((g) => ({ coins: g.coins + coins, xp: g.xp + 8 + Math.floor(time / 3) }));
       setFloater(`+${coins} 🪙`);
     } else {
-      setGain((g) => ({ ...g, xp: g.xp + 5 }));
+      setGain((g) => ({ ...g, xp: g.xp + 1 }));
       setFloater(null);
     }
     setTimeout(() => {
@@ -176,6 +176,7 @@ function Game({ questions, cat, onReplay }: { questions: Q[]; cat: (typeof CATEG
       <div key={q.id} className="relative rounded-3xl bg-card p-6 animate-pop">
         {floater && <span className="absolute right-6 top-4 text-xl font-extrabold text-accent animate-float-up">{floater}</span>}
         <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">{q.lang === "ht" ? "Kreyòl" : q.lang === "en" ? "English" : "Français"}</span>
+        {q.image_url && <img src={q.image_url} alt="" className="mt-3 max-h-56 w-full rounded-2xl object-contain bg-muted" />}
         <h2 className="mt-2 text-xl font-bold leading-snug">{q.question}</h2>
       </div>
 

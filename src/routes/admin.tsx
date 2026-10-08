@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
+import { PAGE_SLOTS, PAGE_STATUS, SETTING_KEYS, uploadMedia } from "@/lib/site";
 
 export const Route = createFileRoute("/admin")({
   ssr: false,
@@ -100,6 +101,9 @@ function Dashboard({ email }: { email: string }) {
           <TabsTrigger value="banners">Bannières</TabsTrigger>
           <TabsTrigger value="embeds">Intégrations</TabsTrigger>
           <TabsTrigger value="notifs">Notifications</TabsTrigger>
+          <TabsTrigger value="stickers">Stickers</TabsTrigger>
+          <TabsTrigger value="pages">Pages</TabsTrigger>
+          <TabsTrigger value="settings">Réglages</TabsTrigger>
         </TabsList>
         <TabsContent value="withdrawals"><Withdrawals /></TabsContent>
         <TabsContent value="questions">
@@ -109,6 +113,7 @@ function Dashboard({ email }: { email: string }) {
             { k: "question", label: "Question", long: true },
             { k: "options", label: "Réponses (une par ligne, 4 max)", long: true, list: true },
             { k: "correct_index", label: "Index de la bonne réponse (0 = première)", num: true },
+            { k: "image_url", label: "Image (optionnelle)", upload: "questions" },
           ]} />
         </TabsContent>
         <TabsContent value="quotes">
@@ -138,12 +143,15 @@ function Dashboard({ email }: { email: string }) {
           ]} />
         </TabsContent>
         <TabsContent value="notifs"><Notifs /></TabsContent>
+        <TabsContent value="stickers"><StickerAdmin /></TabsContent>
+        <TabsContent value="pages"><PagesAdmin /></TabsContent>
+        <TabsContent value="settings"><SettingsAdmin /></TabsContent>
       </Tabs>
     </div>
   );
 }
 
-type Field = { k: string; label: string; long?: boolean; list?: boolean; num?: boolean; bool?: boolean };
+type Field = { k: string; label: string; long?: boolean; list?: boolean; num?: boolean; bool?: boolean; upload?: string };
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Row = any;
 type CrudTable = "questions" | "quotes" | "banners" | "embeds";
@@ -181,7 +189,16 @@ function Crud({ table, fields, title, sub }: { table: CrudTable; fields: Field[]
           {fields.map((f) => (
             <div key={f.k}>
               <Label>{f.label}</Label>
-              {f.long ? (
+              {f.upload ? (
+                <div className="flex items-center gap-2">
+                  {edit[f.k] && <img src={edit[f.k]} alt="" className="h-12 w-12 rounded object-cover" />}
+                  <Input type="file" accept="image/*" onChange={async (e) => {
+                    const file = e.target.files?.[0]; if (!file) return;
+                    try { const url = await uploadMedia(file, f.upload!); setEdit({ ...edit, [f.k]: url }); } catch (err) { toast.error((err as Error).message); }
+                  }} />
+                  {edit[f.k] && <Button size="sm" variant="ghost" onClick={() => setEdit({ ...edit, [f.k]: "" })}>Retirer</Button>}
+                </div>
+              ) : f.long ? (
                 <Textarea value={edit[f.k] ?? ""} onChange={(e) => setEdit({ ...edit, [f.k]: e.target.value })} />
               ) : (
                 <Input value={edit[f.k] ?? ""} onChange={(e) => setEdit({ ...edit, [f.k]: e.target.value })} />
@@ -284,6 +301,167 @@ function Notifs() {
           <p className="text-muted-foreground">{n.body}</p>
         </div>
       ))}
+    </div>
+  );
+}
+
+function StickerAdmin() {
+  const qc = useQueryClient();
+  const [form, setForm] = useState({ name: "", category: "Humour" });
+  const [uploading, setUploading] = useState<string | null>(null);
+  const { data: packs = [] } = useQuery({
+    queryKey: ["admin", "sticker-packs"],
+    queryFn: async () => (await supabase.from("sticker_packs").select("id,name,category,stickers(id,image_url)").order("created_at", { ascending: false })).data ?? [],
+  });
+  const refresh = () => { qc.invalidateQueries({ queryKey: ["admin", "sticker-packs"] }); qc.invalidateQueries({ queryKey: ["sticker-packs"] }); };
+  const createPack = async () => {
+    if (!form.name.trim()) return void toast.error("Nom du pack requis");
+    const { error } = await supabase.from("sticker_packs").insert({ name: form.name.trim(), category: form.category.trim() || "Humour" });
+    if (error) return void toast.error(error.message);
+    setForm({ ...form, name: "" }); refresh();
+  };
+  const addFiles = async (packId: string, files: FileList | null) => {
+    if (!files?.length) return;
+    setUploading(packId);
+    try {
+      for (const file of Array.from(files)) {
+        if (!/image\/(webp|png)/.test(file.type)) { toast.error(`${file.name} : WebP ou PNG uniquement`); continue; }
+        const url = await uploadMedia(file, `stickers/${packId}`);
+        await supabase.from("stickers").insert({ pack_id: packId, image_url: url });
+      }
+      toast.success("Stickers importés");
+    } catch (e) { toast.error((e as Error).message); }
+    setUploading(null); refresh();
+  };
+  return (
+    <div className="space-y-3 pt-2">
+      <div className="space-y-2 rounded-2xl bg-card p-4">
+        <Label>Nouveau pack</Label>
+        <Input placeholder="Nom du pack" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+        <Input placeholder="Catégorie (Humour, Réactions, Amour…)" value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} />
+        <Button onClick={createPack}><Plus /> Créer le pack</Button>
+      </div>
+      {packs.map((p) => (
+        <div key={p.id} className="rounded-2xl bg-card p-4">
+          <div className="flex items-center gap-2">
+            <b>{p.name}</b><span className="text-xs text-muted-foreground">{p.category} · {p.stickers.length}</span>
+            <Button size="icon" variant="ghost" className="ml-auto" onClick={async () => { if (confirm("Supprimer le pack ?")) { await supabase.from("sticker_packs").delete().eq("id", p.id); refresh(); } }}><Trash2 /></Button>
+          </div>
+          <div className="mt-2 grid grid-cols-5 gap-2">
+            {p.stickers.map((s) => (
+              <button key={s.id} title="Supprimer" onClick={async () => { await supabase.from("stickers").delete().eq("id", s.id); refresh(); }} className="aspect-square rounded-lg bg-muted p-1 hover:opacity-60">
+                <img src={s.image_url} alt="" className="h-full w-full object-contain" />
+              </button>
+            ))}
+          </div>
+          <Label className="mt-3 block text-xs text-muted-foreground">{uploading === p.id ? "Import en cours…" : "Importer des stickers (WebP / PNG transparents, plusieurs à la fois)"}</Label>
+          <Input type="file" multiple accept="image/webp,image/png" disabled={uploading === p.id} onChange={(e) => addFiles(p.id, e.target.files)} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function PagesAdmin() {
+  const qc = useQueryClient();
+  const { data: pages = [] } = useQuery({
+    queryKey: ["admin", "pages"],
+    queryFn: async () => (await supabase.from("custom_pages").select("*")).data ?? [],
+  });
+  const [slug, setSlug] = useState<string>(PAGE_SLOTS[0].slug);
+  const current = pages.find((p) => p.slug === slug);
+  const [f, setF] = useState<Row>(null);
+  useEffect(() => {
+    setF({ title: current?.title ?? "", mode: current?.mode ?? "image", html: current?.html ?? "", image_url: current?.image_url ?? "", body: current?.body ?? "", status: current?.status ?? "disabled" });
+  }, [slug, current]);
+  if (!f) return null;
+  const save = async () => {
+    const { error } = await supabase.from("custom_pages").upsert({ slug, ...f, updated_at: new Date().toISOString() });
+    if (error) return void toast.error(error.message);
+    toast.success("Page enregistrée");
+    qc.invalidateQueries({ queryKey: ["admin", "pages"] }); qc.invalidateQueries({ queryKey: ["custom_pages"] });
+  };
+  const url = slug.startsWith("page-") ? `/p/${slug}` : `/${slug}`;
+  return (
+    <div className="space-y-3 pt-2">
+      <div className="flex flex-wrap gap-2">
+        {PAGE_SLOTS.map((p) => {
+          const st = pages.find((x) => x.slug === p.slug)?.status;
+          return (
+            <button key={p.slug} onClick={() => setSlug(p.slug)} className={`rounded-full px-3 py-1 text-xs font-semibold ${slug === p.slug ? "bg-primary text-primary-foreground" : "bg-card"}`}>
+              {p.label}{st && st !== "disabled" ? " •" : ""}
+            </button>
+          );
+        })}
+      </div>
+      <div className="space-y-3 rounded-2xl bg-card p-4">
+        <p className="text-xs text-muted-foreground">Adresse publique : <a href={url} target="_blank" rel="noreferrer" className="text-primary">{url}</a></p>
+        <div><Label>Titre</Label><Input value={f.title} onChange={(e) => setF({ ...f, title: e.target.value })} /></div>
+        <div>
+          <Label>Statut</Label>
+          <div className="mt-1 flex flex-wrap gap-2">
+            {PAGE_STATUS.map((s) => (
+              <button key={s.id} onClick={() => setF({ ...f, status: s.id })} className={`rounded-lg border px-3 py-1.5 text-xs font-semibold ${f.status === s.id ? "border-primary bg-primary/10 text-primary" : "border-border"}`}>{s.label}</button>
+            ))}
+          </div>
+        </div>
+        <div>
+          <Label>Type de contenu</Label>
+          <div className="mt-1 flex gap-2">
+            {[["image", "Image + texte"], ["html", "HTML / CSS / iframe libre"]].map(([k, l]) => (
+              <button key={k} onClick={() => setF({ ...f, mode: k })} className={`rounded-lg border px-3 py-1.5 text-xs font-semibold ${f.mode === k ? "border-primary bg-primary/10 text-primary" : "border-border"}`}>{l}</button>
+            ))}
+          </div>
+        </div>
+        {f.mode === "html" ? (
+          <div><Label>Code HTML</Label><Textarea rows={12} className="font-mono text-xs" value={f.html} onChange={(e) => setF({ ...f, html: e.target.value })} placeholder="<style>…</style><h1>…</h1><iframe src='…'></iframe>" /></div>
+        ) : (
+          <>
+            <div className="flex items-center gap-2">
+              {f.image_url && <img src={f.image_url} alt="" className="h-12 w-12 rounded object-cover" />}
+              <Input type="file" accept="image/*" onChange={async (e) => {
+                const file = e.target.files?.[0]; if (!file) return;
+                try { setF({ ...f, image_url: await uploadMedia(file, "pages") }); } catch (err) { toast.error((err as Error).message); }
+              }} />
+            </div>
+            <div><Label>Texte</Label><Textarea rows={10} value={f.body} onChange={(e) => setF({ ...f, body: e.target.value })} /></div>
+          </>
+        )}
+        <Button onClick={save}>Enregistrer</Button>
+      </div>
+    </div>
+  );
+}
+
+function SettingsAdmin() {
+  const qc = useQueryClient();
+  const { data: rows = [] } = useQuery({
+    queryKey: ["admin", "settings"],
+    queryFn: async () => (await supabase.from("app_settings").select("*")).data ?? [],
+  });
+  const [vals, setVals] = useState<Record<string, string>>({});
+  useEffect(() => { setVals(Object.fromEntries(rows.map((r) => [r.key, r.value ?? ""]))); }, [rows]);
+  const save = async () => {
+    const payload = SETTING_KEYS.map(({ key }) => ({ key, value: (vals[key] ?? "").trim(), updated_at: new Date().toISOString() }));
+    const { error } = await supabase.from("app_settings").upsert(payload);
+    if (error) return void toast.error(error.message);
+    toast.success("Réglages enregistrés");
+    qc.invalidateQueries({ queryKey: ["settings"] }); qc.invalidateQueries({ queryKey: ["admin", "settings"] });
+  };
+  return (
+    <div className="space-y-3 rounded-2xl bg-card p-4 pt-4">
+      {SETTING_KEYS.map(({ key, label }) => (
+        <div key={key}>
+          <Label>{label}</Label>
+          {key === "head_script" ? (
+            <Textarea rows={5} className="font-mono text-xs" value={vals[key] ?? ""} onChange={(e) => setVals({ ...vals, [key]: e.target.value })} />
+          ) : (
+            <Input value={vals[key] ?? ""} onChange={(e) => setVals({ ...vals, [key]: e.target.value })} />
+          )}
+        </div>
+      ))}
+      <p className="text-xs text-muted-foreground">Les annonces AdSense remplacent automatiquement les emplacements « Publicité » dès que l'ID éditeur est renseigné.</p>
+      <Button onClick={save}>Enregistrer</Button>
     </div>
   );
 }

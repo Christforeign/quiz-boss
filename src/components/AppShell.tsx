@@ -1,13 +1,16 @@
 import { Link, useRouterState } from "@tanstack/react-router";
 import { useEffect } from "react";
-import { Home, Sparkles, Globe, Wallet, UserPlus, Coins } from "lucide-react";
+import { Home, Sparkles, Globe, Wallet, UserPlus, Coins, Sticker, UserRound, MessageCircle, Megaphone, X } from "lucide-react";
+import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { getPlayer, levelFromXp, updatePlayer, usePlayer, REFERRAL_BONUS } from "@/lib/player";
+import { getPlayer, levelFromXp, updatePlayer, usePlayer, useAuthSync, useSession, REFERRAL_BONUS } from "@/lib/player";
+import { usePages, useSettings } from "@/lib/site";
 import { NotificationPrompt } from "./NotificationPrompt";
 
 const NAV = [
   { to: "/", label: "Jouer", icon: Home },
   { to: "/statuts", label: "Statuts", icon: Sparkles },
+  { to: "/stickers", label: "Stickers", icon: Sticker },
   { to: "/explorer", label: "Explorer", icon: Globe },
   { to: "/retrait", label: "Retrait", icon: Wallet },
   { to: "/invite", label: "Inviter", icon: UserPlus },
@@ -52,6 +55,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const path = useRouterState({ select: (s) => s.location.pathname });
   useReferralCapture();
   useNotificationPoller();
+  useAuthSync();
+  useInjectedScripts();
+  const session = useSession();
   const isAdmin = path.startsWith("/admin");
 
   return (
@@ -67,11 +73,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <Coins className="h-4 w-4" /> {player.coins}
             </span>
             <span className="rounded-full bg-primary/15 px-3 py-1 text-primary">Niv. {levelFromXp(player.xp)}</span>
+            <Link to="/auth" aria-label="Mon compte" className={`flex h-8 w-8 items-center justify-center rounded-full ${session ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"}`}>
+              <UserRound className="h-4 w-4" />
+            </Link>
           </div>
         )}
       </header>
       {!isAdmin && <NotificationPrompt />}
       <main className="px-4">{children}</main>
+      {!isAdmin && <Footer />}
+      {!isAdmin && <WhatsAppFab />}
       {!isAdmin && (
         <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-card/90 backdrop-blur-lg">
           <div className="mx-auto flex max-w-2xl justify-around px-2 py-2">
@@ -80,7 +91,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 key={to}
                 to={to}
                 activeOptions={{ exact: to === "/" }}
-                className="flex flex-col items-center gap-0.5 rounded-xl px-3 py-1.5 text-[11px] font-semibold text-muted-foreground transition-colors"
+                className="flex flex-col items-center gap-0.5 rounded-xl px-2 py-1.5 text-[11px] font-semibold text-muted-foreground transition-colors"
                 activeProps={{ className: "text-primary bg-primary/10" }}
               >
                 <Icon className="h-5 w-5" />
@@ -90,6 +101,79 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
         </nav>
       )}
+    </div>
+  );
+}
+
+function useInjectedScripts() {
+  const { data } = useSettings();
+  useEffect(() => {
+    if (!data) return;
+    const client = data["adsense_client"]?.trim();
+    if (client && !document.getElementById("adsense-loader")) {
+      const sc = document.createElement("script");
+      sc.id = "adsense-loader"; sc.async = true; sc.crossOrigin = "anonymous";
+      sc.src = `https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=${encodeURIComponent(client)}`;
+      document.head.appendChild(sc);
+    }
+    const html = data["head_script"]?.trim();
+    if (html && !document.getElementById("custom-head-script")) {
+      const holder = document.createElement("div");
+      holder.id = "custom-head-script"; holder.style.display = "none";
+      const tpl = document.createElement("template");
+      tpl.innerHTML = html;
+      tpl.content.childNodes.forEach((n) => {
+        if (n instanceof HTMLScriptElement) {
+          const sc = document.createElement("script");
+          Array.from(n.attributes).forEach((a) => sc.setAttribute(a.name, a.value));
+          sc.text = n.text;
+          document.head.appendChild(sc);
+        } else holder.appendChild(n.cloneNode(true));
+      });
+      document.body.appendChild(holder);
+    }
+  }, [data]);
+}
+
+function Footer() {
+  const { data: pages } = usePages();
+  const extra = (pages ?? []).filter((p) => p.slug.startsWith("page-") && p.status !== "disabled" && p.title);
+  return (
+    <footer className="mt-10 flex flex-wrap justify-center gap-x-4 gap-y-1 px-4 text-xs text-muted-foreground">
+      {extra.map((p) => (
+        <Link key={p.slug} to="/p/$slug" params={{ slug: p.slug }} className="hover:text-foreground">{p.title}</Link>
+      ))}
+      <Link to="/faq" className="hover:text-foreground">FAQ</Link>
+      <Link to="/conditions" className="hover:text-foreground">Conditions d'utilisation</Link>
+    </footer>
+  );
+}
+
+function WhatsAppFab() {
+  const { data } = useSettings();
+  const [open, setOpen] = useState(false);
+  const support = data?.["whatsapp_support"]?.replace(/\D/g, "");
+  const channel = data?.["whatsapp_channel"]?.trim();
+  if (!support && !channel) return null;
+  return (
+    <div className="fixed bottom-24 right-4 z-40 flex flex-col items-end gap-2">
+      {open && (
+        <div className="flex flex-col gap-2 animate-pop">
+          {support && (
+            <a href={`https://wa.me/${support}`} target="_blank" rel="noreferrer" className="flex items-center gap-2 rounded-full bg-card px-4 py-2 text-sm font-semibold shadow-lg">
+              <MessageCircle className="h-4 w-4 text-success" /> Support
+            </a>
+          )}
+          {channel && (
+            <a href={channel} target="_blank" rel="noreferrer" className="flex items-center gap-2 rounded-full bg-card px-4 py-2 text-sm font-semibold shadow-lg">
+              <Megaphone className="h-4 w-4 text-success" /> Chaîne officielle
+            </a>
+          )}
+        </div>
+      )}
+      <button aria-label="WhatsApp" onClick={() => setOpen(!open)} className="flex h-14 w-14 items-center justify-center rounded-full bg-success text-primary-foreground shadow-xl transition-transform active:scale-90">
+        {open ? <X className="h-6 w-6" /> : <MessageCircle className="h-6 w-6" />}
+      </button>
     </div>
   );
 }

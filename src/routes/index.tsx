@@ -64,7 +64,6 @@ function Home() {
       </section>
 
       <AdSlot slot="home-bottom" />
-      <p className="text-center text-xs text-muted-foreground"><Link to="/admin" className="hover:text-foreground">Espace administrateur</Link></p>
     </div>
   );
 }
