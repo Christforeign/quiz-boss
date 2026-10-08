@@ -52,7 +52,7 @@ function pushProfile() {
     const p = read();
     await supabase.from("profiles").update({
       coins: p.coins, xp: p.xp, games_played: p.gamesPlayed, best_score: p.bestScore,
-      referral_claimed: p.referralClaimed, device_id: p.id, display_name: p.name || undefined,
+      referral_claimed: p.referralClaimed, device_id: p.id,
       updated_at: new Date().toISOString(),
     }).eq("id", session!.user.id);
   }, 600);
