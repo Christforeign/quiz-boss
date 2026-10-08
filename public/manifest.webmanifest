@@ -1,0 +1,12 @@
+{
+  "name": "QuizBoss — Quiz, statuts & récompenses",
+  "short_name": "QuizBoss",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#141a2e",
+  "theme_color": "#141a2e",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}
