@@ -16,3 +16,4 @@
 - Ad slots use the `AdSlot` component as the single place to paste AdSense/partner snippets.
 - Uploaded media (stickers, question/page images) go to the private `media` bucket with long-lived signed URLs; public buckets are blocked on this workspace.
 - Custom pages (page-1..5, conditions, faq) and site settings (WhatsApp links, AdSense, custom script) are upserted rows in `custom_pages` / `app_settings`, edited from Admin; HTML pages render in a sandboxed iframe.
+- Wallet history (Player.history) and daily duel credits live in localStorage only, not synced to profiles; all coin changes go through addCoins() so they're logged. Why: no schema change needed for a virtual currency log.
