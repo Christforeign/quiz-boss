@@ -11,13 +11,21 @@ export type Player = {
   bestScore: number;
   referralClaimed: number;
   referredBy?: string;
+  history?: Tx[];
+  duelDay?: string;
+  duelsUsed?: number;
+  duelBonus?: number;
 };
+
+export type Tx = { t: number; label: string; amount: number; kind: "solo" | "duel" | "reward" | "spend" };
+export const FREE_DUELS_PER_DAY = 3;
+export const SHARE_DUEL_BONUS = 2;
 
 const KEY = "quizboss-player";
 const DEFAULT: Player = { id: "", name: "", coins: 0, xp: 0, gamesPlayed: 0, bestScore: 0, referralClaimed: 0 };
 
-export const WITHDRAW_MIN_LEVEL = 5;
-export const WITHDRAW_MIN_COINS = 500;
+export const WITHDRAW_MIN_LEVEL = 20;
+export const WITHDRAW_MIN_COINS = 1000;
 export const REFERRAL_BONUS = 50;
 export const COINS_PER_CORRECT = 3;
 const XP_CURVE = 250; // XP needed grows quadratically: level n needs (n-1)^2 * XP_CURVE
@@ -68,6 +76,27 @@ export function updatePlayer(fn: (p: Player) => Partial<Player>) {
   const cur = read();
   setLocal({ ...cur, ...fn(cur) });
   pushProfile();
+}
+
+/** Change the coin balance and log it in the wallet history. */
+export function addCoins(amount: number, label: string, kind: Tx["kind"], extra: (p: Player) => Partial<Player> = () => ({})) {
+  updatePlayer((p) => ({
+    ...extra(p),
+    coins: Math.max(0, p.coins + amount),
+    history: [{ t: Date.now(), label, amount, kind }, ...(p.history ?? [])].slice(0, 100),
+  }));
+}
+
+const today = () => new Date().toISOString().slice(0, 10);
+export function duelsLeft(p: Player) {
+  if (p.duelDay !== today()) return FREE_DUELS_PER_DAY;
+  return Math.max(0, FREE_DUELS_PER_DAY + (p.duelBonus ?? 0) - (p.duelsUsed ?? 0));
+}
+export function consumeDuel() {
+  updatePlayer((p) => p.duelDay !== today() ? { duelDay: today(), duelsUsed: 1, duelBonus: 0 } : { duelsUsed: (p.duelsUsed ?? 0) + 1 });
+}
+export function unlockDuelsByShare() {
+  updatePlayer((p) => p.duelDay !== today() ? { duelDay: today(), duelsUsed: 0, duelBonus: SHARE_DUEL_BONUS } : { duelBonus: (p.duelBonus ?? 0) + SHARE_DUEL_BONUS });
 }
 
 export function getPlayer() {

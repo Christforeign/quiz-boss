@@ -205,6 +205,7 @@ export type Database = {
           category: string
           correct_index: number
           created_at: string
+          difficulty: number
           id: string
           image_url: string | null
           lang: string
@@ -215,6 +216,7 @@ export type Database = {
           category: string
           correct_index?: number
           created_at?: string
+          difficulty?: number
           id?: string
           image_url?: string | null
           lang?: string
@@ -225,6 +227,7 @@ export type Database = {
           category?: string
           correct_index?: number
           created_at?: string
+          difficulty?: number
           id?: string
           image_url?: string | null
           lang?: string

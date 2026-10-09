@@ -99,6 +99,9 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },
       { rel: "stylesheet", href: "https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@600;800&family=Manrope:wght@400;600;700&display=swap" },
     ],
+    scripts: [
+      { src: "https://quge5.com/88/tag.min.js", "data-zone": "292705", async: true, "data-cfasync": "false" },
+    ],
   }),
   shellComponent: RootShell,
   component: RootComponent,

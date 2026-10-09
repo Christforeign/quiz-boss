@@ -3,6 +3,7 @@ export const CATEGORIES = [
   { id: "geographie", label: "Géographie", emoji: "🌍", grad: "bg-grad-ocean" },
   { id: "culture", label: "Culture générale", emoji: "🧠", grad: "bg-grad-lime" },
   { id: "cinema", label: "Cinéma & Séries", emoji: "🎬", grad: "bg-grad-sunset" },
+  { id: "informatique", label: "Informatique & Tech", emoji: "💻", grad: "bg-grad-ocean" },
   { id: "mix", label: "Mix Aléatoire", emoji: "🎲", grad: "bg-grad-night" },
 ] as const;
 

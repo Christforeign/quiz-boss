@@ -42,6 +42,14 @@ function Home() {
         </div>
       </section>
 
+      <Link to="/duel" className="flex items-center gap-4 rounded-3xl bg-grad-candy p-5 text-secondary-foreground shadow-lg transition-transform active:scale-95">
+        <span className="text-4xl">⚔️</span>
+        <span>
+          <span className="block text-lg font-extrabold">Mode Duel entre amis</span>
+          <span className="text-sm font-semibold opacity-90">2 à 4 joueurs sur le même écran · mise la cagnotte</span>
+        </span>
+      </Link>
+
       <LocalBanner placement="home" />
 
       <section>
@@ -57,7 +65,7 @@ function Home() {
             >
               <span className="absolute right-3 top-2 text-5xl transition-transform group-hover:scale-125 group-hover:rotate-12">{c.emoji}</span>
               <span className="text-lg font-extrabold leading-tight drop-shadow">{c.label}</span>
-              <span className="text-xs font-semibold opacity-90">10 questions · 15 s</span>
+              <span className="text-xs font-semibold opacity-90">10 questions · chrono adaptatif</span>
             </Link>
           ))}
         </div>

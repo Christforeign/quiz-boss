@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { Copy, Gift, Share2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
-import { REFERRAL_BONUS, updatePlayer, usePlayer } from "@/lib/player";
+import { addCoins, REFERRAL_BONUS, updatePlayer, usePlayer } from "@/lib/player";
 import { shareWhatsApp } from "@/lib/categories";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
@@ -57,7 +57,7 @@ function Invite() {
         <div className="rounded-2xl bg-card p-4 text-center"><p className="text-3xl font-extrabold text-accent">{pending * REFERRAL_BONUS}</p><p className="text-sm text-muted-foreground">pièces à récupérer</p></div>
       </div>
       <Button size="lg" className="w-full" disabled={pending === 0}
-        onClick={() => { updatePlayer((x) => ({ coins: x.coins + pending * REFERRAL_BONUS, referralClaimed: count })); toast.success(`+${pending * REFERRAL_BONUS} pièces !`); }}>
+        onClick={() => { addCoins(pending * REFERRAL_BONUS, "Bonus de parrainage", "reward", () => ({ referralClaimed: count })); toast.success(`+${pending * REFERRAL_BONUS} pièces !`); }}>
         Récupérer mes bonus
       </Button>
     </div>

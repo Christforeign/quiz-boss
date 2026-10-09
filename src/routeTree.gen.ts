@@ -13,12 +13,13 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AdminRouteImport } from './routes/admin'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as ConditionsRouteImport } from './routes/conditions'
+import { Route as DuelRouteImport } from './routes/duel'
 import { Route as ExplorerRouteImport } from './routes/explorer'
 import { Route as FaqRouteImport } from './routes/faq'
 import { Route as InviteRouteImport } from './routes/invite'
+import { Route as PortefeuilleRouteImport } from './routes/portefeuille'
 import { Route as RetraitRouteImport } from './routes/retrait'
 import { Route as StatutsRouteImport } from './routes/statuts'
-import { Route as StickersRouteImport } from './routes/stickers'
 import { Route as PSlugRouteImport } from './routes/p.$slug'
 import { Route as PlayCategoryRouteImport } from './routes/play.$category'
 
@@ -42,6 +43,11 @@ const ConditionsRoute = ConditionsRouteImport.update({
   path: '/conditions',
   getParentRoute: () => rootRouteImport,
 } as any)
+const DuelRoute = DuelRouteImport.update({
+  id: '/duel',
+  path: '/duel',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ExplorerRoute = ExplorerRouteImport.update({
   id: '/explorer',
   path: '/explorer',
@@ -57,6 +63,11 @@ const InviteRoute = InviteRouteImport.update({
   path: '/invite',
   getParentRoute: () => rootRouteImport,
 } as any)
+const PortefeuilleRoute = PortefeuilleRouteImport.update({
+  id: '/portefeuille',
+  path: '/portefeuille',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const RetraitRoute = RetraitRouteImport.update({
   id: '/retrait',
   path: '/retrait',
@@ -65,11 +76,6 @@ const RetraitRoute = RetraitRouteImport.update({
 const StatutsRoute = StatutsRouteImport.update({
   id: '/statuts',
   path: '/statuts',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const StickersRoute = StickersRouteImport.update({
-  id: '/stickers',
-  path: '/stickers',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PSlugRoute = PSlugRouteImport.update({
@@ -88,12 +94,13 @@ export interface FileRoutesByFullPath {
   '/admin': typeof AdminRoute
   '/auth': typeof AuthRoute
   '/conditions': typeof ConditionsRoute
+  '/duel': typeof DuelRoute
   '/explorer': typeof ExplorerRoute
   '/faq': typeof FaqRoute
   '/invite': typeof InviteRoute
+  '/portefeuille': typeof PortefeuilleRoute
   '/retrait': typeof RetraitRoute
   '/statuts': typeof StatutsRoute
-  '/stickers': typeof StickersRoute
   '/p/$slug': typeof PSlugRoute
   '/play/$category': typeof PlayCategoryRoute
 }
@@ -102,12 +109,13 @@ export interface FileRoutesByTo {
   '/admin': typeof AdminRoute
   '/auth': typeof AuthRoute
   '/conditions': typeof ConditionsRoute
+  '/duel': typeof DuelRoute
   '/explorer': typeof ExplorerRoute
   '/faq': typeof FaqRoute
   '/invite': typeof InviteRoute
+  '/portefeuille': typeof PortefeuilleRoute
   '/retrait': typeof RetraitRoute
   '/statuts': typeof StatutsRoute
-  '/stickers': typeof StickersRoute
   '/p/$slug': typeof PSlugRoute
   '/play/$category': typeof PlayCategoryRoute
 }
@@ -117,12 +125,13 @@ export interface FileRoutesById {
   '/admin': typeof AdminRoute
   '/auth': typeof AuthRoute
   '/conditions': typeof ConditionsRoute
+  '/duel': typeof DuelRoute
   '/explorer': typeof ExplorerRoute
   '/faq': typeof FaqRoute
   '/invite': typeof InviteRoute
+  '/portefeuille': typeof PortefeuilleRoute
   '/retrait': typeof RetraitRoute
   '/statuts': typeof StatutsRoute
-  '/stickers': typeof StickersRoute
   '/p/$slug': typeof PSlugRoute
   '/play/$category': typeof PlayCategoryRoute
 }
@@ -133,12 +142,13 @@ export interface FileRouteTypes {
     | '/admin'
     | '/auth'
     | '/conditions'
+    | '/duel'
     | '/explorer'
     | '/faq'
     | '/invite'
+    | '/portefeuille'
     | '/retrait'
     | '/statuts'
-    | '/stickers'
     | '/p/$slug'
     | '/play/$category'
   fileRoutesByTo: FileRoutesByTo
@@ -147,12 +157,13 @@ export interface FileRouteTypes {
     | '/admin'
     | '/auth'
     | '/conditions'
+    | '/duel'
     | '/explorer'
     | '/faq'
     | '/invite'
+    | '/portefeuille'
     | '/retrait'
     | '/statuts'
-    | '/stickers'
     | '/p/$slug'
     | '/play/$category'
   id:
@@ -161,12 +172,13 @@ export interface FileRouteTypes {
     | '/admin'
     | '/auth'
     | '/conditions'
+    | '/duel'
     | '/explorer'
     | '/faq'
     | '/invite'
+    | '/portefeuille'
     | '/retrait'
     | '/statuts'
-    | '/stickers'
     | '/p/$slug'
     | '/play/$category'
   fileRoutesById: FileRoutesById
@@ -176,12 +188,13 @@ export interface RootRouteChildren {
   AdminRoute: typeof AdminRoute
   AuthRoute: typeof AuthRoute
   ConditionsRoute: typeof ConditionsRoute
+  DuelRoute: typeof DuelRoute
   ExplorerRoute: typeof ExplorerRoute
   FaqRoute: typeof FaqRoute
   InviteRoute: typeof InviteRoute
+  PortefeuilleRoute: typeof PortefeuilleRoute
   RetraitRoute: typeof RetraitRoute
   StatutsRoute: typeof StatutsRoute
-  StickersRoute: typeof StickersRoute
   PSlugRoute: typeof PSlugRoute
   PlayCategoryRoute: typeof PlayCategoryRoute
 }
@@ -216,6 +229,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ConditionsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/duel': {
+      id: '/duel'
+      path: '/duel'
+      fullPath: '/duel'
+      preLoaderRoute: typeof DuelRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/explorer': {
       id: '/explorer'
       path: '/explorer'
@@ -237,6 +257,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof InviteRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/portefeuille': {
+      id: '/portefeuille'
+      path: '/portefeuille'
+      fullPath: '/portefeuille'
+      preLoaderRoute: typeof PortefeuilleRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/retrait': {
       id: '/retrait'
       path: '/retrait'
@@ -249,13 +276,6 @@ declare module '@tanstack/react-router' {
       path: '/statuts'
       fullPath: '/statuts'
       preLoaderRoute: typeof StatutsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/stickers': {
-      id: '/stickers'
-      path: '/stickers'
-      fullPath: '/stickers'
-      preLoaderRoute: typeof StickersRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/p/$slug': {
@@ -280,12 +300,13 @@ const rootRouteChildren: RootRouteChildren = {
   AdminRoute: AdminRoute,
   AuthRoute: AuthRoute,
   ConditionsRoute: ConditionsRoute,
+  DuelRoute: DuelRoute,
   ExplorerRoute: ExplorerRoute,
   FaqRoute: FaqRoute,
   InviteRoute: InviteRoute,
+  PortefeuilleRoute: PortefeuilleRoute,
   RetraitRoute: RetraitRoute,
   StatutsRoute: StatutsRoute,
-  StickersRoute: StickersRoute,
   PSlugRoute: PSlugRoute,
   PlayCategoryRoute: PlayCategoryRoute,
 }

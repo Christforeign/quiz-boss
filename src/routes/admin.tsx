@@ -107,12 +107,13 @@ function Dashboard({ email }: { email: string }) {
         </TabsList>
         <TabsContent value="withdrawals"><Withdrawals /></TabsContent>
         <TabsContent value="questions">
-          <Crud table="questions" title={(r) => r.question} sub={(r) => `${r.category} · ${r.lang} · ✔ ${r.options?.[r.correct_index]}`} fields={[
-            { k: "category", label: "Catégorie (musique, geographie, culture, cinema)" },
+          <Crud table="questions" title={(r) => r.question} sub={(r) => `${r.category} · ${r.lang} · D${r.difficulty ?? 1} · ✔ ${r.options?.[r.correct_index]}`} fields={[
+            { k: "category", label: "Catégorie (musique, geographie, culture, cinema, informatique)" },
             { k: "lang", label: "Langue (fr, ht, en)" },
             { k: "question", label: "Question", long: true },
             { k: "options", label: "Réponses (une par ligne, 4 max)", long: true, list: true },
             { k: "correct_index", label: "Index de la bonne réponse (0 = première)", num: true },
+            { k: "difficulty", label: "Difficulté (1 facile → 5 très dur)", num: true },
             { k: "image_url", label: "Image (optionnelle)", upload: "questions" },
           ]} />
         </TabsContent>

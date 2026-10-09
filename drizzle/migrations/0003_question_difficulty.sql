@@ -1,0 +1,1 @@
+ALTER TABLE public.questions ADD COLUMN IF NOT EXISTS difficulty integer NOT NULL DEFAULT 1;
