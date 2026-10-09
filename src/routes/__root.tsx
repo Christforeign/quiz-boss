@@ -82,6 +82,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { name: "viewport", content: "width=device-width, initial-scale=1" },
       { title: "QuizBoss — Quiz, statuts & récompenses" },
       { name: "description", content: "Joue au quiz, gagne des pièces et partage tes statuts WhatsApp." },
+      { name: "monetag", content: "1e3495038def6fa88ca53d54345f1f69" },
       { name: "theme-color", content: "#141a2e" },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
