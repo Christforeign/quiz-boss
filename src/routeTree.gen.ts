@@ -18,7 +18,6 @@ import { Route as FaqRouteImport } from './routes/faq'
 import { Route as InviteRouteImport } from './routes/invite'
 import { Route as RetraitRouteImport } from './routes/retrait'
 import { Route as StatutsRouteImport } from './routes/statuts'
-import { Route as StickersRouteImport } from './routes/stickers'
 import { Route as PSlugRouteImport } from './routes/p.$slug'
 import { Route as PlayCategoryRouteImport } from './routes/play.$category'
 
@@ -67,11 +66,6 @@ const StatutsRoute = StatutsRouteImport.update({
   path: '/statuts',
   getParentRoute: () => rootRouteImport,
 } as any)
-const StickersRoute = StickersRouteImport.update({
-  id: '/stickers',
-  path: '/stickers',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const PSlugRoute = PSlugRouteImport.update({
   id: '/p/$slug',
   path: '/p/$slug',
@@ -93,7 +87,6 @@ export interface FileRoutesByFullPath {
   '/invite': typeof InviteRoute
   '/retrait': typeof RetraitRoute
   '/statuts': typeof StatutsRoute
-  '/stickers': typeof StickersRoute
   '/p/$slug': typeof PSlugRoute
   '/play/$category': typeof PlayCategoryRoute
 }
@@ -107,7 +100,6 @@ export interface FileRoutesByTo {
   '/invite': typeof InviteRoute
   '/retrait': typeof RetraitRoute
   '/statuts': typeof StatutsRoute
-  '/stickers': typeof StickersRoute
   '/p/$slug': typeof PSlugRoute
   '/play/$category': typeof PlayCategoryRoute
 }
@@ -122,7 +114,6 @@ export interface FileRoutesById {
   '/invite': typeof InviteRoute
   '/retrait': typeof RetraitRoute
   '/statuts': typeof StatutsRoute
-  '/stickers': typeof StickersRoute
   '/p/$slug': typeof PSlugRoute
   '/play/$category': typeof PlayCategoryRoute
 }
@@ -138,7 +129,6 @@ export interface FileRouteTypes {
     | '/invite'
     | '/retrait'
     | '/statuts'
-    | '/stickers'
     | '/p/$slug'
     | '/play/$category'
   fileRoutesByTo: FileRoutesByTo
@@ -152,7 +142,6 @@ export interface FileRouteTypes {
     | '/invite'
     | '/retrait'
     | '/statuts'
-    | '/stickers'
     | '/p/$slug'
     | '/play/$category'
   id:
@@ -166,7 +155,6 @@ export interface FileRouteTypes {
     | '/invite'
     | '/retrait'
     | '/statuts'
-    | '/stickers'
     | '/p/$slug'
     | '/play/$category'
   fileRoutesById: FileRoutesById
@@ -181,7 +169,6 @@ export interface RootRouteChildren {
   InviteRoute: typeof InviteRoute
   RetraitRoute: typeof RetraitRoute
   StatutsRoute: typeof StatutsRoute
-  StickersRoute: typeof StickersRoute
   PSlugRoute: typeof PSlugRoute
   PlayCategoryRoute: typeof PlayCategoryRoute
 }
@@ -251,13 +238,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof StatutsRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/stickers': {
-      id: '/stickers'
-      path: '/stickers'
-      fullPath: '/stickers'
-      preLoaderRoute: typeof StickersRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/p/$slug': {
       id: '/p/$slug'
       path: '/p/$slug'
@@ -285,7 +265,6 @@ const rootRouteChildren: RootRouteChildren = {
   InviteRoute: InviteRoute,
   RetraitRoute: RetraitRoute,
   StatutsRoute: StatutsRoute,
-  StickersRoute: StickersRoute,
   PSlugRoute: PSlugRoute,
   PlayCategoryRoute: PlayCategoryRoute,
 }
