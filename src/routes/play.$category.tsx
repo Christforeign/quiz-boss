@@ -4,7 +4,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Coins, Share2, RotateCcw, Timer } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { CATEGORIES, shareWhatsApp } from "@/lib/categories";
-import { COINS_PER_CORRECT, getPlayer, levelFromXp, updatePlayer } from "@/lib/player";
+import { addCoins, COINS_PER_CORRECT, getPlayer, levelFromXp } from "@/lib/player";
+import { sfx } from "@/lib/sound";
+import { MuteButton } from "@/components/MuteButton";
 import { AdSlot, LocalBanner } from "@/components/Ads";
 import { Button } from "@/components/ui/button";
 
@@ -24,10 +26,13 @@ export const Route = createFileRoute("/play/$category")({
   component: Play,
 });
 
-const TIME = 15;
+// Adaptive timer: generous at first, shrinks as the player chains correct answers.
+const BASE_TIME = 20;
+const MIN_TIME = 7;
+const timeFor = (streak: number, idx: number) => Math.max(MIN_TIME, BASE_TIME - streak * 2 - Math.floor(idx / 3));
 const ROUND = 10;
 
-type Q = { id: string; question: string; options: string[]; correct_index: number; lang: string; image_url: string | null };
+type Q = { id: string; question: string; options: string[]; correct_index: number; lang: string; image_url: string | null; difficulty: number };
 
 function shuffle<T>(a: T[]) {
   const b = [...a];
@@ -40,16 +45,16 @@ function shuffle<T>(a: T[]) {
 
 function Play() {
   const { category } = Route.useParams();
-  const cat = CATEGORIES.find((c) => c.id === category) ?? CATEGORIES[4];
+  const cat = CATEGORIES.find((c) => c.id === category) ?? CATEGORIES.find((c) => c.id === "mix")!;
   const [round, setRound] = useState(0);
   const { data, isLoading } = useQuery({
     queryKey: ["questions", category, round],
     staleTime: Infinity,
     queryFn: async () => {
-      let q = supabase.from("questions").select("id,question,options,correct_index,lang,image_url");
+      let q = supabase.from("questions").select("id,question,options,correct_index,lang,image_url,difficulty");
       if (category !== "mix") q = q.eq("category", category);
       const { data } = await q;
-      return shuffle((data ?? []) as Q[]).slice(0, ROUND).map((x) => {
+      return shuffle((data ?? []) as Q[]).slice(0, ROUND).sort((a, b) => a.difficulty - b.difficulty).map((x) => {
         const order = shuffle(x.options.map((_, i) => i));
         return { ...x, options: order.map((i) => x.options[i] as string), correct_index: order.indexOf(x.correct_index) };
       });
@@ -64,7 +69,9 @@ function Play() {
 function Game({ questions, cat, onReplay }: { questions: Q[]; cat: (typeof CATEGORIES)[number]; onReplay: () => void }) {
   const [idx, setIdx] = useState(0);
   const [picked, setPicked] = useState<number | null>(null);
-  const [time, setTime] = useState(TIME);
+  const [streak, setStreak] = useState(0);
+  const [limit, setLimit] = useState(BASE_TIME);
+  const [time, setTime] = useState(BASE_TIME);
   const [score, setScore] = useState(0);
   const [correct, setCorrect] = useState(0);
   const [gain, setGain] = useState<{ coins: number; xp: number }>({ coins: 0, xp: 0 });
@@ -76,6 +83,7 @@ function Game({ questions, cat, onReplay }: { questions: Q[]; cat: (typeof CATEG
   useEffect(() => {
     if (picked !== null || done) return;
     if (time <= 0) { answer(-1); return; }
+    if (time <= 5) sfx.tick(time <= 3);
     const t = setTimeout(() => setTime((x) => x - 1), 1000);
     return () => clearTimeout(t);
   });
@@ -83,20 +91,25 @@ function Game({ questions, cat, onReplay }: { questions: Q[]; cat: (typeof CATEG
   function answer(i: number) {
     if (picked !== null) return;
     setPicked(i);
-    if (i === q.correct_index) {
-      const pts = 50 + time * 3;
-      const coins = COINS_PER_CORRECT + (time >= 10 ? 1 : 0);
+    const ok = i === q.correct_index;
+    const nextStreak = ok ? streak + 1 : 0;
+    setStreak(nextStreak);
+    if (ok) {
+      sfx.correct();
+      const pts = 50 + time * 3 + (q.difficulty - 1) * 10;
+      const coins = COINS_PER_CORRECT + (time >= limit / 2 ? 1 : 0);
       setScore((s) => s + pts);
       setCorrect((c) => c + 1);
       setGain((g) => ({ coins: g.coins + coins, xp: g.xp + 8 + Math.floor(time / 3) }));
       setFloater(`+${coins} 🪙`);
     } else {
       setGain((g) => ({ ...g, xp: g.xp + 1 }));
+      sfx.wrong();
       setFloater(null);
     }
     setTimeout(() => {
       if (idx + 1 >= questions.length) finish();
-      else { setIdx((x) => x + 1); setPicked(null); setTime(TIME); setFloater(null); }
+      else { const l = timeFor(nextStreak, idx + 1); setIdx((x) => x + 1); setPicked(null); setLimit(l); setTime(l); setFloater(null); }
     }, 1400);
   }
 
@@ -106,8 +119,8 @@ function Game({ questions, cat, onReplay }: { questions: Q[]; cat: (typeof CATEG
 
   useEffect(() => {
     if (!done) return;
-    updatePlayer((p) => ({
-      coins: p.coins + gain.coins,
+    if (correct >= questions.length / 2) sfx.win(); else sfx.lose();
+    addCoins(gain.coins, `Partie solo · ${cat.label} (${correct}/${questions.length})`, "solo", (p) => ({
       xp: p.xp + gain.xp,
       gamesPlayed: p.gamesPlayed + 1,
       bestScore: Math.max(p.bestScore, score),
@@ -152,12 +165,16 @@ function Game({ questions, cat, onReplay }: { questions: Q[]; cat: (typeof CATEG
     );
   }
 
-  const pct = (time / TIME) * 100;
+  const pct = (time / limit) * 100;
   return (
     <div className="space-y-5 py-2">
       <div className="flex items-center justify-between text-sm font-bold">
         <span>{cat.emoji} {cat.label}</span>
-        <span className="text-muted-foreground">{idx + 1}/{questions.length}</span>
+        <span className="flex items-center gap-2 text-muted-foreground">
+          {streak >= 2 && <span className="text-accent">🔥 x{streak}</span>}
+          {idx + 1}/{questions.length}
+          <MuteButton />
+        </span>
       </div>
       <div className="flex gap-1">
         {questions.map((_, i) => (
