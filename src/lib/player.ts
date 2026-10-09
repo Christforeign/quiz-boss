@@ -92,7 +92,7 @@ export function duelsLeft(p: Player) {
   if (p.duelDay !== today()) return FREE_DUELS_PER_DAY;
   return Math.max(0, FREE_DUELS_PER_DAY + (p.duelBonus ?? 0) - (p.duelsUsed ?? 0));
 }
-export function useDuelCredit() {
+export function consumeDuel() {
   updatePlayer((p) => p.duelDay !== today() ? { duelDay: today(), duelsUsed: 1, duelBonus: 0 } : { duelsUsed: (p.duelsUsed ?? 0) + 1 });
 }
 export function unlockDuelsByShare() {

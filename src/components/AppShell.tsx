@@ -1,16 +1,16 @@
 import { Link, useRouterState } from "@tanstack/react-router";
 import { useEffect } from "react";
-import { Home, Sparkles, Globe, Wallet, UserPlus, Coins, Sticker, UserRound, MessageCircle, Megaphone, X } from "lucide-react";
+import { Home, Sparkles, Globe, Wallet, UserPlus, Coins, Swords, UserRound, MessageCircle, Megaphone, X } from "lucide-react";
 import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { getPlayer, levelFromXp, updatePlayer, usePlayer, useAuthSync, useSession, REFERRAL_BONUS } from "@/lib/player";
+import { addCoins, getPlayer, levelFromXp, updatePlayer, usePlayer, useAuthSync, useSession, REFERRAL_BONUS } from "@/lib/player";
 import { usePages, useSettings } from "@/lib/site";
 import { NotificationPrompt } from "./NotificationPrompt";
 
 const NAV = [
   { to: "/", label: "Jouer", icon: Home },
   { to: "/statuts", label: "Statuts", icon: Sparkles },
-  { to: "/stickers", label: "Stickers", icon: Sticker },
+  { to: "/duel", label: "Duel", icon: Swords },
   { to: "/explorer", label: "Explorer", icon: Globe },
   { to: "/retrait", label: "Retrait", icon: Wallet },
   { to: "/invite", label: "Inviter", icon: UserPlus },
@@ -25,7 +25,7 @@ function useReferralCapture() {
       .from("referrals")
       .insert({ referrer_id: ref, invitee_device: p.id })
       .then(({ error }) => {
-        if (!error) updatePlayer((x) => ({ referredBy: ref, coins: x.coins + REFERRAL_BONUS }));
+        if (!error) addCoins(REFERRAL_BONUS, "Bonus de bienvenue", "reward", () => ({ referredBy: ref }));
       });
   }, []);
 }
@@ -69,9 +69,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </Link>
         {!isAdmin && (
           <div className="ml-auto flex items-center gap-2 text-sm font-bold">
-            <span className="flex items-center gap-1 rounded-full bg-accent/15 px-3 py-1 text-accent">
+            <Link to="/portefeuille" aria-label="Mon portefeuille" className="flex items-center gap-1 rounded-full bg-accent/15 px-3 py-1 text-accent">
               <Coins className="h-4 w-4" /> {player.coins}
-            </span>
+            </Link>
             <span className="rounded-full bg-primary/15 px-3 py-1 text-primary">Niv. {levelFromXp(player.xp)}</span>
             <Link to="/auth" aria-label="Mon compte" className={`flex h-8 w-8 items-center justify-center rounded-full ${session ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"}`}>
               <UserRound className="h-4 w-4" />

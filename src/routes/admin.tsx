@@ -108,7 +108,7 @@ function Dashboard({ email }: { email: string }) {
         <TabsContent value="withdrawals"><Withdrawals /></TabsContent>
         <TabsContent value="questions">
           <Crud table="questions" title={(r) => r.question} sub={(r) => `${r.category} · ${r.lang} · ✔ ${r.options?.[r.correct_index]}`} fields={[
-            { k: "category", label: "Catégorie (musique, geographie, culture, cinema)" },
+            { k: "category", label: "Catégorie (musique, geographie, culture, cinema, informatique)" },
             { k: "lang", label: "Langue (fr, ht, en)" },
             { k: "question", label: "Question", long: true },
             { k: "options", label: "Réponses (une par ligne, 4 max)", long: true, list: true },

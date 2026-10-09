@@ -2,7 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { Lock, Wallet } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
-import { levelFromXp, updatePlayer, usePlayer, useSession, WITHDRAW_MIN_COINS, WITHDRAW_MIN_LEVEL } from "@/lib/player";
+import { addCoins, levelFromXp, updatePlayer, usePlayer, useSession, WITHDRAW_MIN_COINS, WITHDRAW_MIN_LEVEL } from "@/lib/player";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -44,7 +44,7 @@ function Retrait() {
     });
     setBusy(false);
     if (error) return void toast.error("Envoi impossible, réessaie.");
-    updatePlayer((x) => ({ coins: x.coins - amount }));
+    addCoins(-amount, "Demande de retrait", "spend");
     setForm({ full_name: "", contact: "", account: "", amount: "" });
     toast.success("Demande envoyée ! Elle sera validée manuellement sous 48 h.");
   };
