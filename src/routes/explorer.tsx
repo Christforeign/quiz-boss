@@ -9,7 +9,10 @@ export const Route = createFileRoute("/explorer")({
   head: () => ({
     meta: [
       { title: "Explorer — Jeux & outils partenaires | QuizBoss" },
-      { name: "description", content: "Mini-jeux, outils et liens partenaires intégrés directement dans QuizBoss." },
+      {
+        name: "description",
+        content: "Mini-jeux, outils et liens partenaires intégrés directement dans QuizBoss.",
+      },
       { property: "og:title", content: "Explorer — QuizBoss" },
       { property: "og:description", content: "Des jeux et outils partenaires à découvrir." },
     ],
@@ -28,12 +31,32 @@ function Explorer() {
     return (
       <div className="space-y-3 animate-pop">
         <div className="flex items-center gap-2">
-          <button onClick={() => setOpen(null)} className="flex items-center gap-1 text-sm font-semibold"><ArrowLeft className="h-4 w-4" /> Retour</button>
+          <button
+            onClick={() => setOpen(null)}
+            className="flex items-center gap-1 text-sm font-semibold"
+          >
+            <ArrowLeft className="h-4 w-4" /> Retour
+          </button>
           <span className="ml-2 font-bold">{open.title}</span>
-          <a href={open.url} target="_blank" rel="noreferrer" className="ml-auto text-muted-foreground"><ExternalLink className="h-4 w-4" /></a>
+          <a
+            href={open.url}
+            target="_blank"
+            rel="noreferrer"
+            className="ml-auto text-muted-foreground"
+          >
+            <ExternalLink className="h-4 w-4" />
+          </a>
         </div>
-        <iframe src={open.url} title={open.title} className="h-[70vh] w-full rounded-2xl border border-border bg-card" sandbox="allow-scripts allow-same-origin allow-forms allow-popups" />
-        <p className="text-xs text-muted-foreground">Si le contenu ne s'affiche pas, le site partenaire bloque l'intégration : ouvre-le avec l'icône ↗.</p>
+        <iframe
+          src={open.url}
+          title={open.title}
+          className="h-[70vh] w-full rounded-2xl border border-border bg-card"
+          sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+        />
+        <p className="text-xs text-muted-foreground">
+          Si le contenu ne s'affiche pas, le site partenaire bloque l'intégration : ouvre-le avec
+          l'icône ↗.
+        </p>
       </div>
     );
 
@@ -45,9 +68,15 @@ function Explorer() {
       </div>
       <div className="grid gap-3">
         {(data ?? []).map((e, i) => (
-          <button key={e.id} onClick={() => setOpen(e)} style={{ animationDelay: `${i * 50}ms` }}
-            className="flex items-center gap-4 rounded-2xl bg-card p-4 text-left transition-transform animate-pop hover:-translate-y-0.5">
-            <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-grad-ocean text-xl font-extrabold text-secondary-foreground">{e.title[0]}</span>
+          <button
+            key={e.id}
+            onClick={() => setOpen(e)}
+            style={{ animationDelay: `${i * 50}ms` }}
+            className="flex items-center gap-4 rounded-2xl bg-card p-4 text-left transition-transform animate-pop hover:-translate-y-0.5"
+          >
+            <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-grad-ocean text-xl font-extrabold text-secondary-foreground">
+              {e.title[0]}
+            </span>
             <div className="min-w-0">
               <p className="font-bold">{e.title}</p>
               <p className="truncate text-sm text-muted-foreground">{e.description}</p>

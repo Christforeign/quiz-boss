@@ -10,5 +10,10 @@ export const Route = createFileRoute("/p/$slug")({
       { property: "og:description", content: "Découvre les nouveautés QuizBoss." },
     ],
   }),
-  component: () => <CustomPage slug={Route.useParams().slug} />,
+  component: DynamicPage,
 });
+
+function DynamicPage() {
+  const { slug } = Route.useParams();
+  return <CustomPage slug={slug} />;
+}

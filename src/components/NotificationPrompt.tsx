@@ -34,10 +34,15 @@ export function NotificationPrompt() {
     <div className="mx-4 mb-3 flex items-center gap-3 rounded-2xl border border-border bg-card p-3 animate-pop">
       <Bell className="h-5 w-5 shrink-0 text-primary" />
       <p className="text-sm">Reçois les nouveaux défis et bonus de pièces ?</p>
-      <Button size="sm" onClick={enable} className="ml-auto">Activer</Button>
+      <Button size="sm" onClick={enable} className="ml-auto">
+        Activer
+      </Button>
       <button
         aria-label="Fermer"
-        onClick={() => { localStorage.setItem("quizboss-notif-dismissed", "1"); setShow(false); }}
+        onClick={() => {
+          localStorage.setItem("quizboss-notif-dismissed", "1");
+          setShow(false);
+        }}
         className="text-muted-foreground"
       >
         <X className="h-4 w-4" />

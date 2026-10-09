@@ -28,6 +28,7 @@ import {
   createDepositRequest,
   fetchDeposits,
   uploadPaymentProof,
+  usePaymentMethods,
   useSettings,
 } from "@/lib/site";
 import { sfx } from "@/lib/sound";
@@ -43,12 +44,12 @@ export const Route = createFileRoute("/portefeuille")({
       {
         name: "description",
         content:
-          "Gère ton solde GDS sur QuizBoss : effectue un dépôt manuel (MonCash, Natcash, PayPal, Virement), retire tes gains et consulte ton historique.",
+          "Gère ton solde GDS sur QuizBoss : effectue un dépôt (MonCash, Natcash, PayPal, Virement), retire tes gains de duel et consulte ton historique.",
       },
       { property: "og:title", content: "Portefeuille GDS — QuizBoss" },
       {
         property: "og:description",
-        content: "Dépôt, retrait et historique de tes gains en parties solo et duels.",
+        content: "Dépôt, retrait et suivi de tes gains de duels en GDS.",
       },
     ],
   }),
@@ -56,14 +57,13 @@ export const Route = createFileRoute("/portefeuille")({
 });
 
 const KIND: Record<Tx["kind"], string> = {
-  solo: "🎯 Solo",
-  duel: "⚔️ Duel",
-  reward: "🎁 Récompense",
-  spend: "💸 Retrait / Achat",
+  solo: "🎯 Quiz Solo (Points non échangeables)",
+  duel: "⚔️ Duel Multijoueur (GDS échangeables)",
+  reward: "🎁 Bonus",
+  spend: "💸 Retrait",
   deposit: "💳 Dépôt GDS",
 };
 
-const DEPOSIT_METHODS = ["MonCash", "Natcash", "PayPal", "Virement"] as const;
 const QUICK_AMOUNTS = [25, 50, 100, 250, 500, 1000];
 
 function Wallet() {
@@ -71,10 +71,28 @@ function Wallet() {
   const session = useSession();
   const qc = useQueryClient();
   const { data: settings } = useSettings();
+  const { data: paymentMethods = [] } = usePaymentMethods();
+  const depositMethods = paymentMethods.filter((m) => m.active && m.forDeposit);
+
   const [tab, setTab] = useState<"deposit" | "history">("deposit");
 
   // Deposit Form State
-  const [method, setMethod] = useState<(typeof DEPOSIT_METHODS)[number]>("MonCash");
+  const [selectedMethodId, setSelectedMethodId] = useState<string>("moncash");
+  const activeMethod = depositMethods.find(
+    (m) => m.id === selectedMethodId || m.name === selectedMethodId,
+  ) ??
+    depositMethods[0] ?? {
+      id: "moncash",
+      name: "MonCash",
+      receiverAccount: "+509 3700-0000",
+      receiverName: "QuizBoss Haïti",
+      accountLabel: "Ton numéro MonCash",
+      instructions: "Envoie le montant souhaité puis joins la capture d'écran du reçu.",
+      forDeposit: true,
+      forWithdrawal: true,
+      active: true,
+    };
+
   const [amount, setAmount] = useState("25");
   const [fullName, setFullName] = useState(p.name || "");
   const [senderAccount, setSenderAccount] = useState("");
@@ -86,7 +104,8 @@ function Wallet() {
 
   const minDeposit = parseInt(settings?.["deposit_min_amount"] || "", 10) || DEPOSIT_MIN_COINS;
   const minWithdraw = parseInt(settings?.["withdraw_min_amount"] || "", 10) || WITHDRAW_MIN_COINS;
-  const minWithdrawLevel = parseInt(settings?.["withdraw_min_level"] || "", 10) || WITHDRAW_MIN_LEVEL;
+  const minWithdrawLevel =
+    parseInt(settings?.["withdraw_min_level"] || "", 10) || WITHDRAW_MIN_LEVEL;
 
   const { data: myDeposits = [] } = useQuery({
     queryKey: ["my-deposits", p.id, session?.user.id],
@@ -100,42 +119,13 @@ function Wallet() {
   });
 
   const history = p.history ?? [];
-  const earned = history.filter((h) => h.amount > 0).reduce((a, h) => a + h.amount, 0);
-  const spent = history.filter((h) => h.amount < 0).reduce((a, h) => a - h.amount, 0);
+  const gdsHistory = history.filter((h) => (h.unit ?? "GDS") === "GDS" && h.kind !== "solo");
+  const earned = gdsHistory.filter((h) => h.amount > 0).reduce((a, h) => a + h.amount, 0);
+  const spent = gdsHistory.filter((h) => h.amount < 0).reduce((a, h) => a - h.amount, 0);
   const lvl = levelFromXp(p.xp);
 
-  // Payment receiver details configured in Admin -> Réglages
-  const getReceiverInfo = () => {
-    if (method === "MonCash") {
-      return {
-        title: "Compte MonCash de réception",
-        account: settings?.["deposit_moncash_number"] || "+509 3700-0000 (Configurable dans Admin)",
-        holder: settings?.["deposit_moncash_name"] || "QuizBoss Haïti",
-      };
-    }
-    if (method === "Natcash") {
-      return {
-        title: "Compte Natcash de réception",
-        account: settings?.["deposit_natcash_number"] || "+509 4000-0000 (Configurable dans Admin)",
-        holder: settings?.["deposit_natcash_name"] || "QuizBoss Haïti",
-      };
-    }
-    if (method === "PayPal") {
-      return {
-        title: "Compte PayPal de réception",
-        account: settings?.["deposit_paypal_email"] || "paiement@quizboss.app",
-        holder: "QuizBoss International",
-      };
-    }
-    return {
-      title: "Coordonnées Bancaires (Virement)",
-      account: settings?.["deposit_bank_info"] || "Sogebank / Unibank — Configurable dans Admin → Réglages",
-      holder: "QuizBoss",
-    };
-  };
-
-  const receiver = getReceiverInfo();
   const customInstructions =
+    activeMethod.instructions ||
     settings?.["deposit_instructions"] ||
     "1. Envoie le montant souhaité sur le compte indiqué ci-dessous.\n2. Prends une capture d'écran du reçu de confirmation.\n3. Remplis ce formulaire avec le code de transaction et la capture d'écran.";
 
@@ -177,7 +167,7 @@ function Wallet() {
         user_id: session?.user.id ?? null,
         full_name: fullName.trim().slice(0, 100),
         sender_account: senderAccount.trim().slice(0, 100),
-        method,
+        method: activeMethod.name,
         amount: numAmount,
         transaction_ref: transactionRef.trim().slice(0, 100),
         proof_url: proofUrl,
@@ -185,7 +175,7 @@ function Wallet() {
       });
       sfx.coin();
       toast.success(
-        "Demande de dépôt envoyée ! L'administrateur va vérifier ta preuve et créditer ton solde.",
+        "Demande de dépôt envoyée ! Ta preuve est en cours de vérification et ton solde sera crédité sous peu.",
       );
       setTransactionRef("");
       setProofUrl(null);
@@ -204,17 +194,18 @@ function Wallet() {
       <div className="rounded-3xl bg-grad-lime p-6 text-primary-foreground shadow-xl">
         <div className="flex items-center justify-between">
           <p className="text-xs font-extrabold uppercase tracking-wider opacity-85">
-            Portefeuille QuizBoss
+            Solde Échangeable (Duels & Dépôts)
           </p>
           <span className="rounded-full bg-background/20 px-3 py-1 text-xs font-extrabold">
-            Niveau {lvl}
+            Niveau {lvl} · {p.quizPoints ?? 0} Pts Quiz
           </span>
         </div>
         <p className="mt-2 flex items-center gap-2 text-5xl font-extrabold">
           <Coins className="h-10 w-10" /> {p.coins} <span className="text-2xl">GDS</span>
         </p>
-        <p className="mt-1 text-xs font-semibold opacity-85">
-          Utilise ton solde pour miser en Duel Multijoueur (25 GDS → gagne 45 GDS) ou retirer tes gains.
+        <p className="mt-1 text-xs font-semibold opacity-90">
+          Seul l'argent gagné en <b>Duel avec mise</b> (ou déposé) est échangeable et retirable. Les
+          points gagnés en quiz normal servent uniquement à monter de niveau.
         </p>
 
         <div className="mt-4 grid grid-cols-2 gap-2.5">
@@ -241,23 +232,28 @@ function Wallet() {
         </div>
       </div>
 
-      {/* Résumé Gains / Dépenses */}
-      <div className="grid grid-cols-2 gap-3">
-        <div className="rounded-2xl bg-card p-4">
-          <p className="flex items-center gap-1 text-xs font-bold text-muted-foreground">
-            <ArrowDownLeft className="h-4 w-4 text-success" /> Total Crédité / Gagné
+      {/* Résumé Gains / Dépenses / Points Quiz */}
+      <div className="grid grid-cols-3 gap-2.5">
+        <div className="rounded-2xl bg-card p-3.5">
+          <p className="flex items-center gap-1 text-[11px] font-bold text-muted-foreground">
+            <ArrowDownLeft className="h-3.5 w-3.5 text-success" /> Gagné / Déposé
           </p>
-          <p className="mt-1 text-2xl font-extrabold text-success">+{earned} GDS</p>
+          <p className="mt-1 text-xl font-extrabold text-success">+{earned} GDS</p>
         </div>
-        <div className="rounded-2xl bg-card p-4">
-          <p className="flex items-center gap-1 text-xs font-bold text-muted-foreground">
-            <ArrowUpRight className="h-4 w-4 text-destructive" /> Misé / Retiré
+        <div className="rounded-2xl bg-card p-3.5">
+          <p className="flex items-center gap-1 text-[11px] font-bold text-muted-foreground">
+            <ArrowUpRight className="h-3.5 w-3.5 text-destructive" /> Misé / Retiré
           </p>
-          <p className="mt-1 text-2xl font-extrabold text-destructive">−{spent} GDS</p>
+          <p className="mt-1 text-xl font-extrabold text-destructive">−{spent} GDS</p>
+        </div>
+        <div className="rounded-2xl bg-card p-3.5">
+          <p className="text-[11px] font-bold text-muted-foreground">🎯 Points Solo</p>
+          <p className="mt-1 text-xl font-extrabold text-primary">{p.quizPoints ?? 0} PTS</p>
+          <span className="text-[10px] text-muted-foreground">Non échangeable</span>
         </div>
       </div>
 
-      {/* Navigation Onglets : Dépôt Manuel vs Historique */}
+      {/* Navigation Onglets : Dépôt vs Historique */}
       <div className="grid grid-cols-2 gap-2 rounded-2xl bg-card p-1.5">
         <button
           type="button"
@@ -269,7 +265,7 @@ function Wallet() {
             tab === "deposit" ? "bg-primary text-primary-foreground" : "text-muted-foreground"
           }`}
         >
-          💳 Dépôt Manuel
+          💳 Dépôt GDS
         </button>
         <button
           type="button"
@@ -299,50 +295,52 @@ function Wallet() {
             <div>
               <Label>1. Moyen de paiement</Label>
               <div className="mt-2 grid grid-cols-2 gap-2">
-                {DEPOSIT_METHODS.map((m) => (
+                {depositMethods.map((m) => (
                   <button
                     type="button"
-                    key={m}
+                    key={m.id}
                     onClick={() => {
                       sfx.click();
-                      setMethod(m);
+                      setSelectedMethodId(m.id);
                     }}
                     className={`rounded-xl border p-3 text-sm font-extrabold transition-all ${
-                      method === m
+                      activeMethod.id === m.id
                         ? "border-primary bg-primary/15 text-primary shadow-glow"
                         : "border-border bg-background/40"
                     }`}
                   >
-                    {m}
+                    {m.name}
                   </button>
                 ))}
               </div>
             </div>
 
-            {/* Coordonnées du compte de réception (configuré dans l'Admin) */}
+            {/* Coordonnées du compte de réception */}
             <div className="rounded-2xl border border-primary/30 bg-primary/10 p-4 space-y-1.5">
               <p className="text-xs font-bold uppercase tracking-wider text-primary">
-                {receiver.title}
+                Compte {activeMethod.name} de réception
               </p>
               <div className="flex items-center justify-between gap-2">
                 <code className="text-base font-extrabold text-foreground break-all">
-                  {receiver.account}
+                  {activeMethod.receiverAccount}
                 </code>
                 <Button
                   type="button"
                   size="sm"
                   variant="secondary"
                   onClick={() => {
-                    navigator.clipboard.writeText(receiver.account);
+                    navigator.clipboard.writeText(activeMethod.receiverAccount);
                     toast.success("Coordonnées copiées !");
                   }}
                 >
                   <Copy className="h-3.5 w-3.5" /> Copier
                 </Button>
               </div>
-              <p className="text-xs text-muted-foreground">
-                Nom du bénéficiaire : <b className="text-foreground">{receiver.holder}</b>
-              </p>
+              {activeMethod.receiverName && (
+                <p className="text-xs text-muted-foreground">
+                  Bénéficiaire : <b className="text-foreground">{activeMethod.receiverName}</b>
+                </p>
+              )}
             </div>
 
             {/* 2. Montant du dépôt */}
@@ -393,10 +391,12 @@ function Wallet() {
                 />
               </div>
               <div>
-                <Label htmlFor="dep-acc">4. Numéro / Compte expéditeur</Label>
+                <Label htmlFor="dep-acc">
+                  4. {activeMethod.accountLabel || "Numéro / Compte expéditeur"}
+                </Label>
                 <Input
                   id="dep-acc"
-                  placeholder={method === "PayPal" ? "ton.email@paypal.com" : "Ex: +509 3800-0000"}
+                  placeholder="Saisis ton numéro ou compte utilisé"
                   required
                   maxLength={100}
                   value={senderAccount}
@@ -407,7 +407,9 @@ function Wallet() {
 
             {/* 5. Référence de transaction */}
             <div>
-              <Label htmlFor="dep-ref">5. ID / Référence de la transaction ({method})</Label>
+              <Label htmlFor="dep-ref">
+                5. ID / Référence de la transaction ({activeMethod.name})
+              </Label>
               <Input
                 id="dep-ref"
                 placeholder="Ex: TXN-94827104 ou numéro de reçu"
@@ -446,7 +448,11 @@ function Wallet() {
                 ) : (
                   <label className="flex cursor-pointer flex-col items-center justify-center gap-2 py-3 text-center">
                     <div className="flex h-11 w-11 items-center justify-center rounded-full bg-primary/15 text-primary">
-                      {uploadingProof ? <Clock className="h-5 w-5 animate-spin" /> : <Upload className="h-5 w-5" />}
+                      {uploadingProof ? (
+                        <Clock className="h-5 w-5 animate-spin" />
+                      ) : (
+                        <Upload className="h-5 w-5" />
+                      )}
                     </div>
                     <span className="text-xs font-bold">
                       {uploadingProof
@@ -474,7 +480,7 @@ function Wallet() {
               <Textarea
                 id="dep-note"
                 rows={2}
-                placeholder="Précision éventuelle pour l'administrateur…"
+                placeholder="Précision éventuelle sur ton paiement…"
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
               />
@@ -544,8 +550,8 @@ function Wallet() {
           </section>
 
           <div className="rounded-2xl bg-card p-4 text-sm">
-            Retraits débloqués au <b>niveau {minWithdrawLevel}</b> dès{" "}
-            <b>{minWithdraw} GDS</b>. Tu es actuellement <b>niveau {lvl}</b>.
+            Retraits débloqués au <b>niveau {minWithdrawLevel}</b> dès <b>{minWithdraw} GDS</b>. Tu
+            es actuellement <b>niveau {lvl}</b>.
             <Button asChild size="sm" variant="secondary" className="mt-3 w-full font-bold">
               <Link to="/retrait">Aller à la page Retrait</Link>
             </Button>
@@ -553,38 +559,45 @@ function Wallet() {
         </div>
       ) : (
         <section className="space-y-2.5">
-          <h2 className="text-lg font-extrabold">Historique des transactions</h2>
+          <h2 className="text-lg font-extrabold">Historique des opérations</h2>
           {history.length === 0 ? (
             <p className="rounded-2xl bg-card p-6 text-center text-muted-foreground">
               Aucune opération pour l'instant. Lance une partie ou un duel !
             </p>
           ) : (
             <ul className="space-y-2">
-              {history.map((h, i) => (
-                <li
-                  key={i}
-                  className="flex items-center justify-between gap-3 rounded-2xl bg-card p-3.5"
-                >
-                  <div className="min-w-0">
-                    <p className="truncate font-semibold">{h.label}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {KIND[h.kind] ?? "🪙 Opération"} ·{" "}
-                      {new Date(h.t).toLocaleString("fr-FR", {
-                        dateStyle: "short",
-                        timeStyle: "short",
-                      })}
-                    </p>
-                  </div>
-                  <span
-                    className={`shrink-0 font-extrabold ${
-                      h.amount >= 0 ? "text-success" : "text-destructive"
-                    }`}
+              {history.map((h, i) => {
+                const unit = h.unit ?? (h.kind === "solo" ? "PTS" : "GDS");
+                return (
+                  <li
+                    key={i}
+                    className="flex items-center justify-between gap-3 rounded-2xl bg-card p-3.5"
                   >
-                    {h.amount >= 0 ? "+" : ""}
-                    {h.amount} GDS
-                  </span>
-                </li>
-              ))}
+                    <div className="min-w-0">
+                      <p className="truncate font-semibold">{h.label}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {KIND[h.kind] ?? "🪙 Opération"} ·{" "}
+                        {new Date(h.t).toLocaleString("fr-FR", {
+                          dateStyle: "short",
+                          timeStyle: "short",
+                        })}
+                      </p>
+                    </div>
+                    <span
+                      className={`shrink-0 font-extrabold ${
+                        unit === "PTS"
+                          ? "text-primary"
+                          : h.amount >= 0
+                            ? "text-success"
+                            : "text-destructive"
+                      }`}
+                    >
+                      {h.amount >= 0 ? "+" : ""}
+                      {h.amount} {unit}
+                    </span>
+                  </li>
+                );
+              })}
             </ul>
           )}
         </section>

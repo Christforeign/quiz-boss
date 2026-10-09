@@ -6,7 +6,10 @@ import { sfx } from "@/lib/sound";
 export type Player = {
   id: string;
   name: string;
+  /** Solde réel en GDS (uniquement dépôts + gains de Duels avec mise — seul échangeable/retirable) */
   coins: number;
+  /** Points accumulés en Quiz Solo (non échangeables, servent au classement et XP) */
+  quizPoints: number;
   xp: number;
   gamesPlayed: number;
   bestScore: number;
@@ -24,28 +27,31 @@ export type Tx = {
   label: string;
   amount: number;
   kind: "solo" | "duel" | "reward" | "spend" | "deposit";
+  unit?: "GDS" | "PTS";
 };
 
 export const FREE_DUELS_PER_DAY = 5;
 export const SHARE_DUEL_BONUS = 3;
 
-const KEY = "quizboss-player";
+// Nouvelle clé v3 : réinitialise le solde GDS de tous les joueurs à 0
+const KEY = "quizboss-player-v3";
 const DEFAULT: Player = {
   id: "",
   name: "",
-  coins: 50, // Bonus de départ pour tester les duels à 25 GDS
+  coins: 0, // Solde GDS échangeable initialisé à 0
+  quizPoints: 0,
   xp: 0,
   gamesPlayed: 0,
   bestScore: 0,
   referralClaimed: 0,
 };
 
-export const WITHDRAW_MIN_LEVEL = 5;
+export const WITHDRAW_MIN_LEVEL = 1;
 export const WITHDRAW_MIN_COINS = 100;
 export const DEPOSIT_MIN_COINS = 25;
 export const REFERRAL_BONUS = 50;
-export const COINS_PER_CORRECT = 3;
-const XP_CURVE = 250; // XP needed grows quadratically: level n needs (n-1)^2 * XP_CURVE
+export const COINS_PER_CORRECT = 10; // Points de quiz solo (non échangeables)
+const XP_CURVE = 250;
 
 let cache: Player | null = null;
 const listeners = new Set<() => void>();
@@ -97,7 +103,13 @@ function pushProfile() {
 
 function setLocal(next: Player) {
   cache = next;
-  localStorage.setItem(KEY, JSON.stringify(cache));
+  if (typeof window !== "undefined") {
+    try {
+      window.localStorage.setItem(KEY, JSON.stringify(cache));
+    } catch {
+      // ignore
+    }
+  }
   emit();
 }
 
@@ -113,7 +125,9 @@ export function updatePlayer(fn: (p: Player) => Partial<Player>) {
   pushProfile();
 }
 
-/** Change the coin/GDS balance and log it in the wallet history. */
+/**
+ * Modifie le solde GDS échangeable (UNIQUEMENT pour les dépôts, mises de duel, gains de duel misé et retraits).
+ */
 export function addCoins(
   amount: number,
   label: string,
@@ -126,8 +140,32 @@ export function addCoins(
   updatePlayer((p) => ({
     ...extra(p),
     coins: Math.max(0, p.coins + amount),
-    history: [{ t: Date.now(), label, amount, kind }, ...(p.history ?? [])].slice(0, 100),
+    history: [
+      { t: Date.now(), label, amount, kind, unit: "GDS" as const },
+      ...(p.history ?? []),
+    ].slice(0, 100),
   }));
+}
+
+/**
+ * Ajoute des Points & de l'XP de Quiz Solo (NON échangeables en argent/retrait).
+ */
+export function addQuizPoints(points: number, xpGain: number, score: number, label: string) {
+  updatePlayer((p) => ({
+    quizPoints: (p.quizPoints ?? 0) + Math.max(0, points),
+    xp: p.xp + Math.max(0, xpGain),
+    gamesPlayed: p.gamesPlayed + 1,
+    bestScore: Math.max(p.bestScore, score),
+    history: [
+      { t: Date.now(), label, amount: points, kind: "solo" as const, unit: "PTS" as const },
+      ...(p.history ?? []),
+    ].slice(0, 100),
+  }));
+}
+
+/** Réinitialise le solde GDS local à 0. */
+export function resetLocalBalance() {
+  updatePlayer(() => ({ coins: 0, quizPoints: 0, history: [] }));
 }
 
 const today = () => new Date().toISOString().slice(0, 10);
@@ -158,23 +196,49 @@ async function loadProfile(s: Session) {
   const { data } = await supabase.from("profiles").select("*").eq("id", s.user.id).maybeSingle();
   const local = read();
   if (!data) return;
-  const fresh = data.xp === 0 && data.games_played === 0 && data.coins === 0;
-  if (fresh && (local.xp > 0 || local.coins > 0)) {
-    // First sign-in on this device: keep the guest progress and save it to the account.
-    setLocal({ ...local, name: data.display_name ?? "" });
-    pushProfile();
-  } else {
+
+  // Vérifier si une réinitialisation globale des soldes a été déclenchée
+  const { data: resetRow } = await supabase
+    .from("app_settings")
+    .select("value")
+    .eq("key", "global_balance_reset_at")
+    .maybeSingle();
+  const resetStamp = resetRow?.value ?? "v3-reset";
+  const localStampKey = `quizboss-reset-applied-${s.user.id}`;
+  const alreadyReset =
+    typeof window !== "undefined" && window.localStorage.getItem(localStampKey) === resetStamp;
+
+  if (!alreadyReset) {
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(localStampKey, resetStamp);
+    }
+    await supabase
+      .from("profiles")
+      .update({ coins: 0, updated_at: new Date().toISOString() })
+      .eq("id", s.user.id);
     setLocal({
       ...local,
-      name: data.display_name ?? "",
-      coins: data.coins,
+      name: data.display_name ?? (s.user.email?.split("@")[0] || ""),
+      coins: 0,
       xp: data.xp,
       gamesPlayed: data.games_played,
       bestScore: data.best_score,
       referralClaimed: data.referral_claimed,
       id: data.device_id || local.id,
     });
+    return;
   }
+
+  setLocal({
+    ...local,
+    name: data.display_name ?? (s.user.email?.split("@")[0] || ""),
+    coins: data.coins,
+    xp: data.xp,
+    gamesPlayed: data.games_played,
+    bestScore: data.best_score,
+    referralClaimed: data.referral_claimed,
+    id: data.device_id || local.id,
+  });
 }
 
 let authReady = false;

@@ -11,7 +11,7 @@ import {
   WITHDRAW_MIN_COINS,
   WITHDRAW_MIN_LEVEL,
 } from "@/lib/player";
-import { useSettings } from "@/lib/site";
+import { usePaymentMethods, useSettings } from "@/lib/site";
 import { sfx } from "@/lib/sound";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -24,30 +24,42 @@ export const Route = createFileRoute("/retrait")({
       { title: "Retrait de gains GDS — QuizBoss" },
       {
         name: "description",
-        content: "Retire tes GDS via MonCash, Natcash, PayPal ou virement bancaire.",
+        content: "Retire tes gains de duel en GDS.",
       },
       { property: "og:title", content: "Retire tes gains — QuizBoss" },
-      { property: "og:description", content: "MonCash, Natcash, PayPal ou virement." },
+      { property: "og:description", content: "Retire tes GDS remportés en Duel." },
     ],
   }),
   component: Retrait,
 });
-
-const METHODS = ["MonCash", "Natcash", "PayPal", "Virement"];
 
 function Retrait() {
   const p = usePlayer();
   const session = useSession();
   const qc = useQueryClient();
   const { data: settings } = useSettings();
+  const { data: paymentMethods = [] } = usePaymentMethods();
+  const withdrawMethods = paymentMethods.filter((m) => m.active && m.forWithdrawal);
 
   const minCoins = parseInt(settings?.["withdraw_min_amount"] || "", 10) || WITHDRAW_MIN_COINS;
   const minLevel = parseInt(settings?.["withdraw_min_level"] || "", 10) || WITHDRAW_MIN_LEVEL;
 
   const level = levelFromXp(p.xp);
   const unlocked = level >= minLevel;
-  const [method, setMethod] = useState("MonCash");
-  const [form, setForm] = useState({ full_name: p.name || "", contact: "", account: "", amount: "" });
+  const [selectedId, setSelectedId] = useState("moncash");
+  const activeMethod = withdrawMethods.find((m) => m.id === selectedId || m.name === selectedId) ??
+    withdrawMethods[0] ?? {
+      id: "moncash",
+      name: "MonCash",
+      accountLabel: "Numéro MonCash pour recevoir tes GDS",
+    };
+
+  const [form, setForm] = useState({
+    full_name: p.name || "",
+    contact: "",
+    account: "",
+    amount: "",
+  });
   const [busy, setBusy] = useState(false);
 
   const { data: myWithdrawals = [] } = useQuery({
@@ -73,7 +85,7 @@ function Retrait() {
       return void toast.error(`Minimum ${minCoins} GDS`);
     }
     if (amount > p.coins) {
-      return void toast.error("Solde insuffisant");
+      return void toast.error("Solde GDS échangeable insuffisant");
     }
     setBusy(true);
     const { error } = await supabase.from("withdrawals").insert({
@@ -82,14 +94,14 @@ function Retrait() {
       full_name: form.full_name.trim().slice(0, 100),
       contact: form.contact.trim().slice(0, 100),
       account: form.account.trim().slice(0, 200),
-      method,
+      method: activeMethod.name,
       amount,
       level,
     });
     setBusy(false);
     if (error) return void toast.error("Envoi impossible, réessaie.");
     sfx.coin();
-    addCoins(-amount, `Demande de retrait (${method})`, "spend");
+    addCoins(-amount, `Demande de retrait (${activeMethod.name})`, "spend");
     setForm({ full_name: p.name || "", contact: "", account: "", amount: "" });
     qc.invalidateQueries({ queryKey: ["my-withdrawals"] });
     toast.success("Demande de retrait envoyée ! Validation sous 24–48 h.");
@@ -108,8 +120,11 @@ function Retrait() {
         </div>
         <h1 className="mt-2 text-3xl font-extrabold">Retirer mes gains</h1>
         <p className="text-sm text-muted-foreground">
-          Solde disponible : <b className="text-accent">{p.coins} GDS</b> · Minimum de retrait :{" "}
-          <b>{minCoins} GDS</b> (Niveau {minLevel}+)
+          Solde échangeable disponible : <b className="text-accent">{p.coins} GDS</b> · Minimum de
+          retrait : <b>{minCoins} GDS</b>
+        </p>
+        <p className="mt-1 text-xs text-muted-foreground">
+          Seuls les GDS gagnés en Duel avec mise (ou déposés) sont retirables.
         </p>
       </div>
 
@@ -145,19 +160,21 @@ function Retrait() {
           <div>
             <Label>Mode de réception du paiement</Label>
             <div className="mt-2 grid grid-cols-2 gap-2">
-              {METHODS.map((m) => (
+              {withdrawMethods.map((m) => (
                 <button
                   type="button"
-                  key={m}
+                  key={m.id}
                   onClick={() => {
                     sfx.click();
-                    setMethod(m);
+                    setSelectedId(m.id);
                   }}
                   className={`rounded-xl border p-3 text-sm font-bold transition-colors ${
-                    method === m ? "border-primary bg-primary/10 text-primary" : "border-border"
+                    activeMethod.id === m.id
+                      ? "border-primary bg-primary/10 text-primary"
+                      : "border-border"
                   }`}
                 >
-                  {m}
+                  {m.name}
                 </button>
               ))}
             </div>
@@ -184,11 +201,8 @@ function Retrait() {
           </div>
           <div>
             <Label htmlFor="a">
-              {method === "Virement"
-                ? "Banque + IBAN / Numéro de compte"
-                : method === "PayPal"
-                  ? "Email PayPal"
-                  : `Numéro ${method} pour recevoir les GDS`}
+              {activeMethod.accountLabel ||
+                `Compte / Numéro ${activeMethod.name} pour recevoir les GDS`}
             </Label>
             <Input
               id="a"

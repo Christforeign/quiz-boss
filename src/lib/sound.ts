@@ -8,7 +8,8 @@ let bgmTimer: ReturnType<typeof setInterval> | null = null;
 let bgmStep = 0;
 
 function isMuted() {
-  if (muted === null) muted = typeof localStorage !== "undefined" && localStorage.getItem(KEY) === "1";
+  if (muted === null)
+    muted = typeof localStorage !== "undefined" && localStorage.getItem(KEY) === "1";
   return muted;
 }
 
@@ -35,7 +36,9 @@ export function useMuted() {
 function ac() {
   if (typeof window === "undefined") return null;
   if (!ctx) {
-    const C = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+    const C =
+      window.AudioContext ||
+      (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
     if (!C) return null;
     ctx = new C();
   }

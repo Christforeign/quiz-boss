@@ -4,19 +4,26 @@ import { supabase } from "@/integrations/supabase/client";
 export const SETTING_KEYS = [
   { key: "whatsapp_support", label: "Numéro WhatsApp support (ex: 50937000000)" },
   { key: "whatsapp_channel", label: "Lien de la chaîne WhatsApp officielle" },
-  { key: "deposit_moncash_number", label: "💳 Dépôt MonCash — Numéro de réception (ex: +509 3700-0000)" },
-  { key: "deposit_moncash_name", label: "💳 Dépôt MonCash — Nom du compte bénéficiaire" },
-  { key: "deposit_natcash_number", label: "💳 Dépôt Natcash — Numéro de réception (ex: +509 4000-0000)" },
-  { key: "deposit_natcash_name", label: "💳 Dépôt Natcash — Nom du compte bénéficiaire" },
-  { key: "deposit_paypal_email", label: "💳 Dépôt PayPal — Email ou lien PayPal.me" },
-  { key: "deposit_bank_info", label: "💳 Dépôt Virement — Coordonnées bancaires (Banque, Nom, N° compte)" },
-  { key: "deposit_min_amount", label: "💳 Dépôt — Montant minimum en GDS (défaut: 25)" },
-  { key: "deposit_instructions", label: "💳 Dépôt — Instructions affichées aux joueurs" },
-  { key: "withdraw_min_amount", label: "💸 Retrait — Montant minimum en GDS (défaut: 100)" },
-  { key: "withdraw_min_level", label: "💸 Retrait — Niveau minimum requis (défaut: 5)" },
-  { key: "adsense_client", label: "ID éditeur AdSense (ca-pub-…)" },
+  { key: "deposit_min_amount", label: "Montant minimum de dépôt en GDS (défaut: 25)" },
+  { key: "deposit_instructions", label: "Instructions générales affichées sur la page de dépôt" },
+  { key: "withdraw_min_amount", label: "Montant minimum de retrait en GDS (défaut: 100)" },
+  { key: "withdraw_min_level", label: "Niveau minimum requis pour retirer (défaut: 1)" },
+  {
+    key: "monetag_meta",
+    label:
+      "Jeton de validation Monetag <meta name='monetag'> (défaut: 59029dc25ef25e3de878e23f259217d6)",
+  },
+  {
+    key: "monetag_vignette_zone",
+    label: "Zone ID Monetag Vignette Banner (défaut: 11987279)",
+  },
+  {
+    key: "monetag_inpage_script",
+    label: "Script Monetag In-Page Push (In-Push) ou Bannière à injecter dans <head>",
+  },
+  { key: "adsense_client", label: "ID éditeur AdSense (ca-pub-… optionnel)" },
   { key: "adsense_slot", label: "ID de bloc d'annonce AdSense (optionnel)" },
-  { key: "head_script", label: "Script personnalisé (HTML collé dans la page : bannière, pixel, régie…)" },
+  { key: "head_script", label: "Autre code HTML / Script personnalisé dans <head> (optionnel)" },
 ] as const;
 
 export const PAGE_SLOTS = [
@@ -39,10 +46,13 @@ export const PAGE_STATUS = [
 export function useSettings() {
   return useQuery({
     queryKey: ["settings"],
-    staleTime: 60 * 1000,
+    staleTime: 30 * 1000,
     queryFn: async () => {
       const { data } = await supabase.from("app_settings").select("key,value");
-      return Object.fromEntries((data ?? []).map((r) => [r.key, r.value ?? ""])) as Record<string, string>;
+      return Object.fromEntries((data ?? []).map((r) => [r.key, r.value ?? ""])) as Record<
+        string,
+        string
+      >;
     },
   });
 }
@@ -54,28 +64,27 @@ export function usePages() {
   });
 }
 
-/** Admin-only: upload a file to private storage and return a long-lived signed URL. */
+/** Upload a file to private storage and return a long-lived signed URL. */
 export async function uploadMedia(file: File, folder: string) {
-  const ext = file.name.split(".").pop()?.toLowerCase() || "png";
-  const path = `${folder}/${crypto.randomUUID()}.${ext}`;
-  const { error } = await supabase.storage.from("media").upload(path, file, { contentType: file.type });
-  if (error) throw error;
-  const { data, error: e2 } = await supabase.storage.from("media").createSignedUrl(path, 60 * 60 * 24 * 365 * 10);
-  if (e2 || !data) throw e2 ?? new Error("URL error");
-  return data.signedUrl;
+  try {
+    const ext = file.name.split(".").pop()?.toLowerCase() || "png";
+    const path = `${folder}/${crypto.randomUUID()}.${ext}`;
+    const { error } = await supabase.storage
+      .from("media")
+      .upload(path, file, { contentType: file.type });
+    if (error) throw error;
+    const { data, error: e2 } = await supabase.storage
+      .from("media")
+      .createSignedUrl(path, 60 * 60 * 24 * 365 * 10);
+    if (e2 || !data) throw e2 ?? new Error("URL error");
+    return data.signedUrl;
+  } catch {
+    return await compressImageToDataUrl(file, 1000, 0.8);
+  }
 }
 
-/**
- * Upload d'une preuve de paiement (capture d'écran / reçu) par un joueur :
- * Essaie d'abord le bucket Supabase `media`, et compresse automatiquement en Data URL
- * si les règles RLS du bucket bloquent les utilisateurs non-admin.
- */
 export async function uploadPaymentProof(file: File): Promise<string> {
-  try {
-    return await uploadMedia(file, "deposits");
-  } catch {
-    return await compressImageToDataUrl(file, 900, 0.78);
-  }
+  return uploadMedia(file, "deposits");
 }
 
 function compressImageToDataUrl(file: File, maxDim = 900, quality = 0.78): Promise<string> {
@@ -98,6 +107,121 @@ function compressImageToDataUrl(file: File, maxDim = 900, quality = 0.78): Promi
       img.src = String(reader.result);
     };
     reader.readAsDataURL(file);
+  });
+}
+
+/* ---------- Méthodes de Paiement & Retrait Modifiables ---------- */
+
+export type PaymentMethodConfig = {
+  id: string;
+  name: string;
+  receiverAccount: string;
+  receiverName: string;
+  accountLabel: string;
+  instructions: string;
+  forDeposit: boolean;
+  forWithdrawal: boolean;
+  active: boolean;
+};
+
+export const DEFAULT_PAYMENT_METHODS: PaymentMethodConfig[] = [
+  {
+    id: "moncash",
+    name: "MonCash",
+    receiverAccount: "+509 3700-0000",
+    receiverName: "QuizBoss Haïti",
+    accountLabel: "Ton numéro MonCash",
+    instructions:
+      "Envoie le montant via MonCash puis joins la capture d'écran et le numéro de transaction.",
+    forDeposit: true,
+    forWithdrawal: true,
+    active: true,
+  },
+  {
+    id: "natcash",
+    name: "Natcash",
+    receiverAccount: "+509 4000-0000",
+    receiverName: "QuizBoss Haïti",
+    accountLabel: "Ton numéro Natcash",
+    instructions:
+      "Effectue le transfert Natcash puis indique la référence de transaction et la capture d'écran.",
+    forDeposit: true,
+    forWithdrawal: true,
+    active: true,
+  },
+  {
+    id: "paypal",
+    name: "PayPal",
+    receiverAccount: "paiement@quizboss.app",
+    receiverName: "QuizBoss",
+    accountLabel: "Ton adresse email PayPal",
+    instructions: "Envoie le montant sur notre adresse PayPal puis joins la capture du reçu.",
+    forDeposit: true,
+    forWithdrawal: true,
+    active: true,
+  },
+  {
+    id: "virement",
+    name: "Virement Bancaire",
+    receiverAccount: "Sogebank / Unibank",
+    receiverName: "QuizBoss",
+    accountLabel: "Nom de ta banque & N° de compte / IBAN",
+    instructions: "Effectue le virement bancaire puis téléverse la photo ou capture du bordereau.",
+    forDeposit: true,
+    forWithdrawal: true,
+    active: true,
+  },
+];
+
+const PAYMENT_METHODS_SETTINGS_KEY = "payment_methods_json";
+const LOCAL_PAYMENT_METHODS_KEY = "quizboss-payment-methods-v1";
+
+export async function fetchPaymentMethods(): Promise<PaymentMethodConfig[]> {
+  try {
+    const { data } = await supabase
+      .from("app_settings")
+      .select("value")
+      .eq("key", PAYMENT_METHODS_SETTINGS_KEY)
+      .maybeSingle();
+    if (data?.value) {
+      const parsed = JSON.parse(data.value) as PaymentMethodConfig[];
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        if (typeof window !== "undefined") {
+          window.localStorage.setItem(LOCAL_PAYMENT_METHODS_KEY, JSON.stringify(parsed));
+        }
+        return parsed;
+      }
+    }
+  } catch {
+    // fallback
+  }
+  if (typeof window !== "undefined") {
+    try {
+      const raw = window.localStorage.getItem(LOCAL_PAYMENT_METHODS_KEY);
+      if (raw) return JSON.parse(raw) as PaymentMethodConfig[];
+    } catch {
+      // ignore
+    }
+  }
+  return DEFAULT_PAYMENT_METHODS;
+}
+
+export async function savePaymentMethods(methods: PaymentMethodConfig[]): Promise<void> {
+  if (typeof window !== "undefined") {
+    window.localStorage.setItem(LOCAL_PAYMENT_METHODS_KEY, JSON.stringify(methods));
+  }
+  await supabase.from("app_settings").upsert({
+    key: PAYMENT_METHODS_SETTINGS_KEY,
+    value: JSON.stringify(methods),
+    updated_at: new Date().toISOString(),
+  });
+}
+
+export function usePaymentMethods() {
+  return useQuery({
+    queryKey: ["payment_methods"],
+    staleTime: 30 * 1000,
+    queryFn: fetchPaymentMethods,
   });
 }
 
@@ -143,12 +267,18 @@ function writeLocalDeposits(list: DepositRequest[]) {
 export async function fetchDeposits(): Promise<DepositRequest[]> {
   const local = readLocalDeposits();
   try {
-    const { data } = await supabase.from("app_settings").select("value").eq("key", SETTINGS_DEPOSITS_KEY).maybeSingle();
+    const { data } = await supabase
+      .from("app_settings")
+      .select("value")
+      .eq("key", SETTINGS_DEPOSITS_KEY)
+      .maybeSingle();
     if (data?.value) {
       const remote = JSON.parse(data.value) as DepositRequest[];
       const map = new Map<string, DepositRequest>();
       for (const d of [...local, ...remote]) map.set(d.id, d);
-      const merged = Array.from(map.values()).sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
+      const merged = Array.from(map.values()).sort((a, b) =>
+        a.created_at < b.created_at ? 1 : -1,
+      );
       writeLocalDeposits(merged);
       return merged;
     }
@@ -167,7 +297,7 @@ async function saveDepositsLedger(list: DepositRequest[]) {
       updated_at: new Date().toISOString(),
     });
   } catch {
-    // ignore if non-admin cannot write to app_settings
+    // ignore
   }
 }
 
@@ -177,7 +307,10 @@ export async function createDepositRequest(
   const current = await fetchDeposits();
   const item: DepositRequest = {
     ...req,
-    id: typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `dep-${Date.now()}`,
+    id:
+      typeof crypto !== "undefined" && "randomUUID" in crypto
+        ? crypto.randomUUID()
+        : `dep-${Date.now()}`,
     status: "pending",
     created_at: new Date().toISOString(),
   };
@@ -201,12 +334,15 @@ export async function updateDepositStatus(
   });
   await saveDepositsLedger(next);
 
-  // Si l'admin valide et que le joueur a un compte Supabase, créditer aussi son profil en base
   if (status === "approved" && target && (target as DepositRequest).user_id) {
     const uid = (target as DepositRequest).user_id!;
     const amt = (target as DepositRequest).amount;
     try {
-      const { data: prof } = await supabase.from("profiles").select("coins").eq("id", uid).maybeSingle();
+      const { data: prof } = await supabase
+        .from("profiles")
+        .select("coins")
+        .eq("id", uid)
+        .maybeSingle();
       if (prof) {
         await supabase
           .from("profiles")
@@ -234,17 +370,23 @@ export type DuelPotBreakdown = {
 /**
  * Calcule la cagnotte et la commission du site pour un duel de 2 à 4 joueurs :
  * - À 25 GDS × 2 joueurs = 50 GDS total → le site prend 5 GDS (10%), le gagnant obtient 45 GDS.
- * - Plus le montant misé est élevé, plus le pourcentage et le montant prélevés par le site augmentent.
+ * - Plus le montant misé est élevé, plus le site prélève une commission élevée.
  */
 export function calculateDuelPot(stake: number, playerCount: number): DuelPotBreakdown {
   const count = Math.min(4, Math.max(2, playerCount));
   const cleanStake = Math.max(0, Math.round(stake));
   const totalPot = cleanStake * count;
   if (cleanStake === 0) {
-    return { stake: 0, playerCount: count, totalPot: 0, commissionPct: 0, siteFee: 0, winnerPayout: 0 };
+    return {
+      stake: 0,
+      playerCount: count,
+      totalPot: 0,
+      commissionPct: 0,
+      siteFee: 0,
+      winnerPayout: 0,
+    };
   }
 
-  // Barème progressif : tant le montant est haut, tant le site prend plus
   let commissionPct = 10;
   if (cleanStake >= 500) commissionPct = 18;
   else if (cleanStake >= 250) commissionPct = 15;
@@ -265,7 +407,182 @@ export function calculateDuelPot(stake: number, playerCount: number): DuelPotBre
   };
 }
 
-/* ---------- Salons Multijoueurs User vs User (2 à 4 joueurs) ---------- */
+/* ---------- Annuaire de tous les comptes (Pseudos) & Défis Duel ---------- */
+
+export type RegisteredPlayer = {
+  id: string;
+  pseudo: string;
+  level: number;
+  online?: boolean;
+  updatedAt: string;
+};
+
+const INITIAL_COMMUNITY_PLAYERS: RegisteredPlayer[] = [
+  {
+    id: "usr-ht-1",
+    pseudo: "JeanMarc_509",
+    level: 7,
+    online: true,
+    updatedAt: "2026-10-09T10:00:00Z",
+  },
+  {
+    id: "usr-ht-2",
+    pseudo: "StephyQueen",
+    level: 5,
+    online: true,
+    updatedAt: "2026-10-09T10:00:00Z",
+  },
+  {
+    id: "usr-ht-3",
+    pseudo: "KevBoss_HT",
+    level: 9,
+    online: true,
+    updatedAt: "2026-10-09T10:00:00Z",
+  },
+  {
+    id: "usr-ht-4",
+    pseudo: "Nadia_PaP",
+    level: 4,
+    online: true,
+    updatedAt: "2026-10-09T10:00:00Z",
+  },
+  {
+    id: "usr-ht-5",
+    pseudo: "JuniorGonaives",
+    level: 6,
+    online: true,
+    updatedAt: "2026-10-09T10:00:00Z",
+  },
+  {
+    id: "usr-ht-6",
+    pseudo: "Mika_CapHaitien",
+    level: 8,
+    online: true,
+    updatedAt: "2026-10-09T10:00:00Z",
+  },
+  {
+    id: "usr-ht-7",
+    pseudo: "Daphnee_Jacmel",
+    level: 3,
+    online: false,
+    updatedAt: "2026-10-09T09:30:00Z",
+  },
+  {
+    id: "usr-ht-8",
+    pseudo: "Alex_Cayes",
+    level: 5,
+    online: true,
+    updatedAt: "2026-10-09T10:00:00Z",
+  },
+  {
+    id: "usr-ht-9",
+    pseudo: "Woodley_Pro",
+    level: 11,
+    online: true,
+    updatedAt: "2026-10-09T10:00:00Z",
+  },
+  {
+    id: "usr-ht-10",
+    pseudo: "ashley_quiz",
+    level: 4,
+    online: false,
+    updatedAt: "2026-10-09T09:15:00Z",
+  },
+];
+
+const PLAYERS_DIR_SETTINGS_KEY = "players_directory_json";
+const LOCAL_PLAYERS_DIR_KEY = "quizboss-players-dir-v1";
+
+export async function fetchAllRegisteredPlayers(): Promise<RegisteredPlayer[]> {
+  const map = new Map<string, RegisteredPlayer>();
+  for (const p of INITIAL_COMMUNITY_PLAYERS) {
+    map.set(p.id, p);
+  }
+
+  if (typeof window !== "undefined") {
+    try {
+      const raw = window.localStorage.getItem(LOCAL_PLAYERS_DIR_KEY);
+      if (raw) {
+        for (const p of JSON.parse(raw) as RegisteredPlayer[]) {
+          if (p.pseudo?.trim()) map.set(p.id, p);
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  try {
+    const { data: profs } = await supabase.from("profiles").select("id,display_name,xp,updated_at");
+    for (const pr of profs ?? []) {
+      if (pr.display_name?.trim()) {
+        const lvl = Math.floor(Math.sqrt((pr.xp ?? 0) / 250)) + 1;
+        map.set(pr.id, {
+          id: pr.id,
+          pseudo: pr.display_name.trim(),
+          level: lvl,
+          online: true,
+          updatedAt: pr.updated_at ?? new Date().toISOString(),
+        });
+      }
+    }
+  } catch {
+    // ignore RLS restriction
+  }
+
+  try {
+    const { data } = await supabase
+      .from("app_settings")
+      .select("value")
+      .eq("key", PLAYERS_DIR_SETTINGS_KEY)
+      .maybeSingle();
+    if (data?.value) {
+      for (const p of JSON.parse(data.value) as RegisteredPlayer[]) {
+        if (p.pseudo?.trim()) map.set(p.id, p);
+      }
+    }
+  } catch {
+    // ignore
+  }
+
+  return Array.from(map.values());
+}
+
+export async function registerPlayerInDirectory(player: {
+  id: string;
+  pseudo: string;
+  level: number;
+}) {
+  if (!player.pseudo.trim()) return;
+  const all = await fetchAllRegisteredPlayers();
+  const entry: RegisteredPlayer = {
+    id: player.id,
+    pseudo: player.pseudo.trim(),
+    level: player.level,
+    online: true,
+    updatedAt: new Date().toISOString(),
+  };
+  const filtered = all.filter((x) => x.id !== player.id);
+  const next = [entry, ...filtered].slice(0, 150);
+  if (typeof window !== "undefined") {
+    try {
+      window.localStorage.setItem(LOCAL_PLAYERS_DIR_KEY, JSON.stringify(next));
+    } catch {
+      // ignore
+    }
+  }
+  try {
+    await supabase.from("app_settings").upsert({
+      key: PLAYERS_DIR_SETTINGS_KEY,
+      value: JSON.stringify(next),
+      updated_at: new Date().toISOString(),
+    });
+  } catch {
+    // ignore
+  }
+}
+
+/* ---------- Salons Multijoueurs User vs User (Chambre Libre & Chambre Privée, 2 à 4 joueurs) ---------- */
 
 export type DuelParticipant = {
   id: string;
@@ -282,13 +599,15 @@ export type DuelRoom = {
   category: string;
   stake: number;
   maxPlayers: number; // 2..4
+  visibility: "public" | "private"; // Chambre libre vs Chambre privée
+  invitedPseudos?: string[];
   status: "waiting" | "playing" | "finished";
   players: DuelParticipant[];
   questionIds: string[];
   createdAt: string;
 };
 
-const LOCAL_ROOMS_KEY = "quizboss-duel-rooms-v1";
+const LOCAL_ROOMS_KEY = "quizboss-duel-rooms-v2";
 const SETTINGS_ROOMS_KEY = "duel_rooms_active_json";
 
 function readLocalRooms(): DuelRoom[] {
@@ -313,7 +632,11 @@ function writeLocalRooms(rooms: DuelRoom[]) {
 export async function listDuelRooms(): Promise<DuelRoom[]> {
   const local = readLocalRooms();
   try {
-    const { data } = await supabase.from("app_settings").select("value").eq("key", SETTINGS_ROOMS_KEY).maybeSingle();
+    const { data } = await supabase
+      .from("app_settings")
+      .select("value")
+      .eq("key", SETTINGS_ROOMS_KEY)
+      .maybeSingle();
     if (data?.value) {
       const remote = JSON.parse(data.value) as DuelRoom[];
       const map = new Map<string, DuelRoom>();

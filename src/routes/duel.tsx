@@ -12,8 +12,11 @@ import {
   Trophy,
   Plus,
   Play,
-  Sparkles,
   Wallet,
+  Lock,
+  Unlock,
+  Search,
+  UserCheck,
 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
@@ -23,21 +26,27 @@ import {
   consumeDuel,
   duelsLeft,
   FREE_DUELS_PER_DAY,
+  levelFromXp,
   SHARE_DUEL_BONUS,
   unlockDuelsByShare,
+  updatePlayer,
   usePlayer,
 } from "@/lib/player";
 import {
   calculateDuelPot,
+  fetchAllRegisteredPlayers,
   listDuelRooms,
+  registerPlayerInDirectory,
   saveDuelRoom,
   type DuelRoom,
+  type RegisteredPlayer,
 } from "@/lib/site";
 import { sfx, useQuizBgm } from "@/lib/sound";
 import { MuteButton } from "@/components/MuteButton";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { difficultyBadge, mergeWithHardQuestions, type QuizQuestion } from "@/lib/hardQuestions";
+import { difficultyBadge, type QuizQuestion } from "@/lib/hardQuestions";
+import { markQuestionsSeen, selectCatalogQuestions } from "@/lib/infiniteQuizCatalog";
 
 export const Route = createFileRoute("/duel")({
   head: () => ({
@@ -46,12 +55,12 @@ export const Route = createFileRoute("/duel")({
       {
         name: "description",
         content:
-          "Affronte 2 à 4 joueurs en duel quiz ! Mise 25 GDS chacun, le gagnant remporte 45 GDS.",
+          "Affronte 2 à 4 joueurs en duel quiz ! Mise 25 GDS chacun, le gagnant remporte 45 GDS échangeables.",
       },
       { property: "og:title", content: "Duel Multijoueur GDS — QuizBoss" },
       {
         property: "og:description",
-        content: "2 à 4 joueurs · Mise dès 25 GDS · Le plus rapide remporte la cagnotte !",
+        content: "Chambre libre, chambre privée ou défi direct par pseudo · 2 à 4 joueurs.",
       },
     ],
   }),
@@ -68,17 +77,7 @@ type Setup = {
 };
 
 const COLORS = ["bg-grad-lime", "bg-grad-sunset", "bg-grad-ocean", "bg-grad-candy"];
-const STAKES = [25, 50, 100, 250, 500, 0];
-const RIVAL_NAMES = [
-  "Jean-Marc 🇭🇹",
-  "StephyQueen",
-  "KevBoss_509",
-  "Nadia_Quiz",
-  "JuniorGonaives",
-  "Mika_Pro",
-  "Daphnée_HT",
-  "AlexCapHaitien",
-];
+const STAKES = [25, 50, 100, 250, 500, 1000, 0];
 
 function shuffle<T>(a: T[]) {
   const b = [...a];
@@ -100,14 +99,11 @@ function DuelPage() {
       .select("id,category,question,options,correct_index,lang,image_url,difficulty");
     if (s.category !== "mix") q = q.eq("category", s.category);
     const { data } = await q;
-    const merged = mergeWithHardQuestions((data ?? []) as QuizQuestion[], s.category);
-
-    // En duel avec mise, privilégier des questions plus corsées (difficulté >= 2)
-    const hardPool = s.stake >= 25 ? merged.filter((x) => (x.difficulty ?? 1) >= 2) : merged;
-    const sourcePool = hardPool.length >= 10 ? hardPool : merged;
+    const minDiff = s.stake >= 25 ? 2 : 1;
+    const pool = selectCatalogQuestions((data ?? []) as QuizQuestion[], s.category, minDiff);
 
     const count = s.mode === "tour" ? s.names.length * 3 : 10;
-    const qs = shuffle(sourcePool)
+    const qs = shuffle(pool)
       .slice(0, count)
       .sort((a, b) => (a.difficulty ?? 1) - (b.difficulty ?? 1))
       .map((x) => {
@@ -120,13 +116,10 @@ function DuelPage() {
       });
 
     if (qs.length < 3) return void toast.error("Pas assez de questions dans cette catégorie.");
+    markQuestionsSeen(qs.map((item) => item.id));
     consumeDuel();
     if (s.stake > 0) {
-      addCoins(
-        -s.stake,
-        `Mise Duel (${s.names.length} joueurs · ${s.stake} GDS/joueur)`,
-        "duel",
-      );
+      addCoins(-s.stake, `Mise Duel (${s.names.length} joueurs · ${s.stake} GDS/joueur)`, "duel");
     }
     sfx.start();
     setSetup(s);
@@ -153,31 +146,42 @@ function DuelPage() {
 function SetupScreen({ onStart }: { onStart: (s: Setup) => void }) {
   const p = usePlayer();
   const [n, setN] = useState(2); // Minimum 2, Maximum 4
-  const [names, setNames] = useState<string[]>(["", "", "", ""]);
+  const [names, setNames] = useState<string[]>([p.name || "", "", "", ""]);
   const [mode, setMode] = useState<Mode>("online");
   const [stake, setStake] = useState(25);
   const [customStake, setCustomStake] = useState("");
   const [category, setCategory] = useState("mix");
 
-  // Online Room & Matchmaking states
+  // Online Room, Visibility & Registered Players Directory
   const [rooms, setRooms] = useState<DuelRoom[]>([]);
   const [activeRoom, setActiveRoom] = useState<DuelRoom | null>(null);
   const [joinCodeInput, setJoinCodeInput] = useState("");
   const [matchmaking, setMatchmaking] = useState(false);
+  const [registeredPlayers, setRegisteredPlayers] = useState<RegisteredPlayer[]>([]);
+  const [playerSearch, setPlayerSearch] = useState("");
+  const [selectedRivals, setSelectedRivals] = useState<string[]>([]);
 
   const left = duelsLeft(p);
   const pot = calculateDuelPot(stake, n);
+  const myDisplayName = names[0]?.trim() || p.name || `Joueur_${p.id.slice(0, 4)}`;
 
   useEffect(() => {
     listDuelRooms().then(setRooms);
+    fetchAllRegisteredPlayers().then(setRegisteredPlayers);
+    if (p.name?.trim()) {
+      registerPlayerInDirectory({
+        id: p.id,
+        pseudo: p.name.trim(),
+        level: levelFromXp(p.xp),
+      });
+    }
     const params = new URLSearchParams(window.location.search);
     const rCode = params.get("room")?.toUpperCase();
     if (rCode) {
       setJoinCodeInput(rCode);
     }
-  }, []);
+  }, [p.id, p.name, p.xp]);
 
-  // Poll active room when waiting for players
   useEffect(() => {
     if (!activeRoom) return;
     const t = setInterval(async () => {
@@ -201,14 +205,37 @@ function SetupScreen({ onStart }: { onStart: (s: Setup) => void }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeRoom?.code]);
 
-  const myDisplayName = names[0]?.trim() || p.name || "Moi";
+  async function saveMyPseudo(newPseudo: string) {
+    setNames([newPseudo, names[1] ?? "", names[2] ?? "", names[3] ?? ""]);
+    if (newPseudo.trim().length >= 2) {
+      updatePlayer(() => ({ name: newPseudo.trim() }));
+      await registerPlayerInDirectory({
+        id: p.id,
+        pseudo: newPseudo.trim(),
+        level: levelFromXp(p.xp),
+      });
+      setRegisteredPlayers(await fetchAllRegisteredPlayers());
+    }
+  }
 
-  async function handleCreateRoom() {
+  async function handleCreateRoom(visibility: "public" | "private") {
     if (stake > p.coins) {
-      return void toast.error("Solde GDS insuffisant pour cette mise. Recharge ton Wallet !");
+      return void toast.error(
+        "Solde GDS insuffisant pour cette mise. Effectue un dépôt dans ton Wallet !",
+      );
     }
     sfx.click();
     const code = "QB" + Math.random().toString(36).substring(2, 6).toUpperCase();
+    const initialPlayers = [
+      { id: p.id, name: myDisplayName, score: 0, finished: false },
+      ...selectedRivals.slice(0, n - 1).map((pseudo, idx) => ({
+        id: `invited-${idx}`,
+        name: pseudo,
+        score: 0,
+        finished: false,
+      })),
+    ];
+
     const room: DuelRoom = {
       code,
       hostId: p.id,
@@ -216,29 +243,35 @@ function SetupScreen({ onStart }: { onStart: (s: Setup) => void }) {
       category,
       stake,
       maxPlayers: n,
+      visibility,
+      invitedPseudos: selectedRivals,
       status: "waiting",
-      players: [{ id: p.id, name: myDisplayName, score: 0, finished: false }],
+      players: initialPlayers,
       questionIds: [],
       createdAt: new Date().toISOString(),
     };
     await saveDuelRoom(room);
     setActiveRoom(room);
     setRooms(await listDuelRooms());
-    toast.success(`Salon ${code} créé ! Invite tes adversaires ou lance le matchmaking.`);
+    toast.success(
+      visibility === "public"
+        ? `Chambre libre ${code} ouverte à tous les joueurs !`
+        : `Chambre privée ${code} créée ! Partage le code à tes amis.`,
+    );
   }
 
   async function handleJoinRoom(codeRaw?: string) {
     const code = (codeRaw ?? joinCodeInput).trim().toUpperCase();
-    if (!code) return void toast.error("Entre un code de salon");
+    if (!code) return void toast.error("Entre un code de chambre");
     const list = await listDuelRooms();
     const room = list.find((r) => r.code === code);
-    if (!room) return void toast.error("Salon introuvable");
+    if (!room) return void toast.error("Chambre introuvable");
     if (room.stake > p.coins) {
-      return void toast.error(`Ce salon demande une mise de ${room.stake} GDS.`);
+      return void toast.error(`Cette chambre demande une mise de ${room.stake} GDS.`);
     }
     if (!room.players.some((pl) => pl.id === p.id)) {
       if (room.players.length >= room.maxPlayers) {
-        return void toast.error("Ce salon est complet (4/4)");
+        return void toast.error("Cette chambre est complète");
       }
       room.players.push({ id: p.id, name: myDisplayName, score: 0, finished: false });
       await saveDuelRoom(room);
@@ -247,13 +280,18 @@ function SetupScreen({ onStart }: { onStart: (s: Setup) => void }) {
     setStake(room.stake);
     setCategory(room.category);
     setActiveRoom({ ...room });
-    toast.success(`Tu as rejoint le salon ${code} !`);
+    toast.success(`Tu as rejoint la chambre ${code} !`);
   }
 
   async function handleFillAndStartRoom() {
     if (!activeRoom) return;
     const updated = { ...activeRoom, players: [...activeRoom.players] };
-    const availRivals = shuffle(RIVAL_NAMES);
+    const otherPseudos = registeredPlayers
+      .map((rp) => rp.pseudo)
+      .filter((ps) => !updated.players.some((pl) => pl.name === ps));
+    const availRivals = shuffle(
+      otherPseudos.length > 0 ? otherPseudos : ["JeanMarc_509", "StephyQueen", "KevBoss_HT"],
+    );
     let rIdx = 0;
     while (updated.players.length < updated.maxPlayers) {
       updated.players.push({
@@ -277,15 +315,38 @@ function SetupScreen({ onStart }: { onStart: (s: Setup) => void }) {
     });
   }
 
-  function handleQuickMatchmaking() {
+  function handleChallengePlayer(targetPseudo: string) {
+    if (stake > p.coins) {
+      return void toast.error(
+        `Solde insuffisant (${p.coins} GDS) pour lancer un duel à ${stake} GDS. Recharge ton Wallet !`,
+      );
+    }
+    sfx.click();
+    if (!selectedRivals.includes(targetPseudo)) {
+      const nextRivals = [...selectedRivals, targetPseudo].slice(0, n - 1);
+      setSelectedRivals(nextRivals);
+      toast.success(`${targetPseudo} ajouté au défi (${nextRivals.length}/${n - 1} adversaires)`);
+    } else {
+      setSelectedRivals(selectedRivals.filter((x) => x !== targetPseudo));
+    }
+  }
+
+  function handleStartDirectChallenge(targetPseudo?: string) {
     if (stake > p.coins) {
       return void toast.error("Solde GDS insuffisant. Recharge ton portefeuille !");
     }
     sfx.click();
     setMatchmaking(true);
     setTimeout(() => {
-      const rivals = shuffle(RIVAL_NAMES).slice(0, n - 1);
-      const matchPlayers = [myDisplayName, ...rivals];
+      const pool = registeredPlayers.map((rp) => rp.pseudo).filter((ps) => ps !== myDisplayName);
+      const chosen = targetPseudo
+        ? [targetPseudo, ...shuffle(pool.filter((x) => x !== targetPseudo))].slice(0, n - 1)
+        : [...selectedRivals, ...shuffle(pool.filter((x) => !selectedRivals.includes(x)))].slice(
+            0,
+            n - 1,
+          );
+
+      const matchPlayers = [myDisplayName, ...chosen];
       setMatchmaking(false);
       onStart({
         names: matchPlayers,
@@ -293,38 +354,55 @@ function SetupScreen({ onStart }: { onStart: (s: Setup) => void }) {
         stake,
         category,
       });
-    }, 1500);
+    }, 1100);
   }
 
   const finalLocalNames = names
     .slice(0, n)
-    .map((x, i) => x.trim() || (i === 0 ? p.name || "Moi" : `Joueur ${i + 1}`));
+    .map((x, i) => x.trim() || (i === 0 ? myDisplayName : `Joueur ${i + 1}`));
+
+  const otherPlayers = registeredPlayers.filter(
+    (rp) =>
+      rp.id !== p.id &&
+      rp.pseudo.toLowerCase() !== myDisplayName.toLowerCase() &&
+      rp.pseudo.toLowerCase().includes(playerSearch.trim().toLowerCase()),
+  );
 
   return (
     <div className="space-y-5 py-2 animate-pop">
-      {/* Hero Banner with exact 25 GDS -> 45 GDS / 5 GDS site breakdown */}
+      {/* Hero Banner */}
       <div className="rounded-3xl bg-grad-candy p-6 text-secondary-foreground shadow-xl">
         <div className="flex items-center justify-between">
           <span className="inline-flex items-center gap-1.5 rounded-full bg-background/25 px-3 py-1 text-xs font-extrabold uppercase tracking-wider">
-            <Swords className="h-3.5 w-3.5" /> Multijoueur 2 à 4 Joueurs
+            <Swords className="h-3.5 w-3.5" /> Duel 2 à 4 Joueurs
           </span>
-          <span className="rounded-full bg-background/25 px-3 py-1 text-xs font-bold">
+          <span className="rounded-full bg-background/25 px-3 py-1 text-xs font-extrabold">
             Solde : {p.coins} GDS
           </span>
         </div>
         <h1 className="mt-3 text-3xl font-extrabold">Duel User vs User</h1>
-        <p className="mt-1 text-sm font-semibold opacity-95">
-          Affronte de 2 à 4 joueurs en quiz ! Exemple : à <b>25 GDS</b> chacun (2 joueurs = 50 GDS), le gagnant remporte <b>45 GDS</b> et le site prend <b>5 GDS</b>.
+        <p className="mt-1 text-xs font-semibold opacity-95">
+          Seuls les gains remportés en Duel avec mise sont échangeables et retirables ! Exemple : à{" "}
+          <b>25 GDS</b> chacun (2 joueurs = 50 GDS), le gagnant obtient <b>45 GDS</b> et le site
+          prend <b>5 GDS</b>.
         </p>
       </div>
 
-      {/* Active Waiting Room Modal/Card */}
+      {/* Chambre active (Libre ou Privée) */}
       {activeRoom && (
         <div className="space-y-4 rounded-3xl border-2 border-primary bg-card p-5 shadow-glow animate-pop">
           <div className="flex items-center justify-between">
             <div>
-              <span className="text-xs font-bold uppercase tracking-widest text-primary">
-                Salon Multijoueur en attente
+              <span className="inline-flex items-center gap-1 text-xs font-bold uppercase tracking-widest text-primary">
+                {activeRoom.visibility === "private" ? (
+                  <>
+                    <Lock className="h-3.5 w-3.5" /> Chambre Privée
+                  </>
+                ) : (
+                  <>
+                    <Unlock className="h-3.5 w-3.5" /> Chambre Libre (Publique)
+                  </>
+                )}
               </span>
               <h2 className="text-2xl font-extrabold">Code : {activeRoom.code}</h2>
             </div>
@@ -334,7 +412,7 @@ function SetupScreen({ onStart }: { onStart: (s: Setup) => void }) {
               onClick={() => {
                 const url = `${window.location.origin}/duel?room=${activeRoom.code}`;
                 navigator.clipboard.writeText(url);
-                toast.success("Lien du salon copié !");
+                toast.success("Lien de la chambre copié !");
               }}
             >
               <Copy className="h-4 w-4" /> Copier lien
@@ -348,13 +426,15 @@ function SetupScreen({ onStart }: { onStart: (s: Setup) => void }) {
                 <div
                   key={i}
                   className={`flex items-center gap-2 rounded-xl border p-3 text-sm font-bold ${
-                    pl ? "border-primary/50 bg-primary/10 text-foreground" : "border-dashed border-border text-muted-foreground"
+                    pl
+                      ? "border-primary/50 bg-primary/10 text-foreground"
+                      : "border-dashed border-border text-muted-foreground"
                   }`}
                 >
                   <span className="flex h-7 w-7 items-center justify-center rounded-full bg-background text-xs">
                     {i + 1}
                   </span>
-                  <span className="truncate">{pl ? pl.name : "En attente d'un joueur…"}</span>
+                  <span className="truncate">{pl ? pl.name : "Place libre…"}</span>
                 </div>
               );
             })}
@@ -370,12 +450,17 @@ function SetupScreen({ onStart }: { onStart: (s: Setup) => void }) {
               <b>{calculateDuelPot(activeRoom.stake, activeRoom.maxPlayers).totalPot} GDS</b>
             </div>
             <div className="flex justify-between text-muted-foreground">
-              <span>Frais plateforme ({calculateDuelPot(activeRoom.stake, activeRoom.maxPlayers).commissionPct}%) :</span>
-              <span>-{calculateDuelPot(activeRoom.stake, activeRoom.maxPlayers).siteFee} GDS</span>
+              <span>
+                Frais plateforme (
+                {calculateDuelPot(activeRoom.stake, activeRoom.maxPlayers).commissionPct}%) :
+              </span>
+              <span>−{calculateDuelPot(activeRoom.stake, activeRoom.maxPlayers).siteFee} GDS</span>
             </div>
             <div className="flex justify-between text-sm font-extrabold text-accent pt-1 border-t border-border">
               <span>🏆 Gain net du gagnant :</span>
-              <span>{calculateDuelPot(activeRoom.stake, activeRoom.maxPlayers).winnerPayout} GDS</span>
+              <span>
+                {calculateDuelPot(activeRoom.stake, activeRoom.maxPlayers).winnerPayout} GDS
+              </span>
             </div>
           </div>
 
@@ -384,16 +469,19 @@ function SetupScreen({ onStart }: { onStart: (s: Setup) => void }) {
               className="bg-success text-primary-foreground hover:bg-success/90"
               onClick={() => {
                 const url = `${window.location.origin}/duel?room=${activeRoom.code}`;
-                const winPot = calculateDuelPot(activeRoom.stake, activeRoom.maxPlayers).winnerPayout;
+                const winPot = calculateDuelPot(
+                  activeRoom.stake,
+                  activeRoom.maxPlayers,
+                ).winnerPayout;
                 shareWhatsApp(
-                  `⚔️ Rejoins mon salon Duel sur QuizBoss (Code: ${activeRoom.code}) !\nMise: ${activeRoom.stake} GDS · Le gagnant remporte ${winPot} GDS 🏆\n👉 ${url}`,
+                  `⚔️ Rejoins ma chambre Duel sur QuizBoss (Code: ${activeRoom.code}) !\nMise: ${activeRoom.stake} GDS · Le gagnant remporte ${winPot} GDS 🏆\n👉 ${url}`,
                 );
               }}
             >
               <Share2 className="h-4 w-4" /> Inviter WhatsApp
             </Button>
             <Button onClick={handleFillAndStartRoom}>
-              <Play className="h-4 w-4" /> Lancer le match ({activeRoom.maxPlayers}J)
+              <Play className="h-4 w-4" /> Démarrer ({activeRoom.maxPlayers}J)
             </Button>
           </div>
           <button
@@ -401,7 +489,7 @@ function SetupScreen({ onStart }: { onStart: (s: Setup) => void }) {
             onClick={() => setActiveRoom(null)}
             className="w-full text-center text-xs text-muted-foreground hover:text-foreground"
           >
-            Quitter le salon
+            Fermer la chambre
           </button>
         </div>
       )}
@@ -422,6 +510,7 @@ function SetupScreen({ onStart }: { onStart: (s: Setup) => void }) {
               onClick={() => {
                 sfx.click();
                 setN(k);
+                setSelectedRivals((prev) => prev.slice(0, k - 1));
               }}
               className="font-extrabold"
             >
@@ -431,11 +520,11 @@ function SetupScreen({ onStart }: { onStart: (s: Setup) => void }) {
         </div>
       </section>
 
-      {/* 2. Mise en GDS & Calculateur automatique de commission progressive */}
+      {/* 2. Mise en GDS : Choix affiché OU saisie manuelle */}
       <section className="space-y-3 rounded-2xl bg-card p-4">
         <div className="flex items-center justify-between">
           <h2 className="flex items-center gap-2 font-extrabold">
-            <Coins className="h-4 w-4 text-accent" /> 2. Mise par joueur (en GDS)
+            <Coins className="h-4 w-4 text-accent" /> 2. Mise par joueur (Choisir ou saisir)
           </h2>
           <Link to="/portefeuille" className="text-xs font-bold text-primary hover:underline">
             + Déposer des GDS
@@ -455,69 +544,83 @@ function SetupScreen({ onStart }: { onStart: (s: Setup) => void }) {
               }}
               className="font-bold"
             >
-              {s === 0 ? "Entraînement (0 GDS)" : `${s} GDS`}
+              {s === 0 ? "0 GDS (Entraînement)" : `${s} GDS`}
             </Button>
           ))}
         </div>
 
-        <div className="flex items-center gap-2">
-          <Input
-            type="number"
-            min={25}
-            step={5}
-            placeholder="Autre mise (ex: 75, 150, 300 GDS…)"
-            value={customStake}
-            onChange={(e) => {
-              const v = e.target.value;
-              setCustomStake(v);
-              const parsed = parseInt(v, 10);
-              if (!isNaN(parsed) && parsed >= 25) {
-                setStake(parsed);
-              }
-            }}
-          />
+        <div className="space-y-1">
+          <label className="text-xs font-bold text-muted-foreground">
+            Ou saisir une mise manuelle (minimum 25 GDS) :
+          </label>
+          <div className="flex items-center gap-2">
+            <Input
+              type="number"
+              min={25}
+              placeholder="Saisis ton montant en GDS (ex: 35, 75, 150, 400…)"
+              value={customStake}
+              onChange={(e) => {
+                const v = e.target.value;
+                setCustomStake(v);
+                const parsed = parseInt(v, 10);
+                if (!isNaN(parsed) && parsed >= 25) {
+                  setStake(parsed);
+                }
+              }}
+            />
+            {customStake && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setCustomStake("");
+                  setStake(25);
+                }}
+              >
+                25 GDS
+              </Button>
+            )}
+          </div>
         </div>
 
-        {/* Répartition transparente de la cagnotte */}
+        {/* Répartition de la cagnotte */}
         <div className="rounded-2xl border border-primary/30 bg-background/60 p-4 space-y-2">
           <div className="flex items-center justify-between text-xs text-muted-foreground">
-            <span>Mise de chaque joueur ({n} joueurs) :</span>
+            <span>Total misé ({n} joueurs) :</span>
             <b className="text-foreground">
               {pot.stake} GDS × {pot.playerCount} = {pot.totalPot} GDS
             </b>
           </div>
           <div className="flex items-center justify-between text-xs text-muted-foreground">
-            <span>Commission du site ({pot.commissionPct}% progressif) :</span>
+            <span>Frais du site ({pot.commissionPct}%) :</span>
             <b className="text-destructive">−{pot.siteFee} GDS</b>
           </div>
           <div className="flex items-center justify-between border-t border-border pt-2">
             <span className="flex items-center gap-1.5 text-sm font-extrabold">
-              <Trophy className="h-4 w-4 text-accent" /> Gain du Gagnant :
+              <Trophy className="h-4 w-4 text-accent" /> Gain échangeable du Gagnant :
             </span>
             <span className="text-xl font-extrabold text-accent">{pot.winnerPayout} GDS</span>
           </div>
-          <p className="text-[11px] text-muted-foreground">
-            💡 Plus la mise et le nombre de joueurs sont élevés, plus la cagnotte grimpe (commission plateforme progressive de 10% à 18%).
-          </p>
         </div>
 
         {stake > p.coins && (
           <div className="flex items-center justify-between rounded-xl bg-destructive/15 p-3 text-xs">
             <span className="font-semibold text-destructive">
-              Ton solde ({p.coins} GDS) est inférieur à la mise de {stake} GDS.
+              Ton solde échangeable ({p.coins} GDS) est inférieur à la mise de {stake} GDS.
             </span>
             <Button size="sm" variant="secondary" asChild>
               <Link to="/portefeuille">
-                <Wallet className="h-3.5 w-3.5" /> Recharger
+                <Wallet className="h-3.5 w-3.5" /> Déposer
               </Link>
             </Button>
           </div>
         )}
       </section>
 
-      {/* 3. Mode de Confrontation */}
-      <section className="space-y-2 rounded-2xl bg-card p-4">
-        <h2 className="font-extrabold">3. Mode d'affrontement</h2>
+      {/* 3. Mode & Pseudo */}
+      <section className="space-y-3 rounded-2xl bg-card p-4">
+        <h2 className="font-extrabold">3. Ton Pseudo & Mode de jeu</h2>
         <div className="grid grid-cols-3 gap-2">
           <button
             type="button"
@@ -526,12 +629,14 @@ function SetupScreen({ onStart }: { onStart: (s: Setup) => void }) {
               setMode("online");
             }}
             className={`rounded-2xl border p-3 text-left transition-all ${
-              mode === "online" ? "border-primary bg-primary/15 shadow-glow" : "border-border bg-background/40"
+              mode === "online"
+                ? "border-primary bg-primary/15 shadow-glow"
+                : "border-border bg-background/40"
             }`}
           >
-            <Globe className="h-4 w-4 text-primary mb-1" />
-            <b className="block text-xs">En ligne (User vs User)</b>
-            <p className="text-[10px] text-muted-foreground">Salon ou Matchmaking 2–4J</p>
+            <Globe className="mb-1 h-4 w-4 text-primary" />
+            <b className="block text-xs">En Ligne</b>
+            <p className="text-[10px] text-muted-foreground">Chambre libre / privée</p>
           </button>
           <button
             type="button"
@@ -540,12 +645,14 @@ function SetupScreen({ onStart }: { onStart: (s: Setup) => void }) {
               setMode("buzzer");
             }}
             className={`rounded-2xl border p-3 text-left transition-all ${
-              mode === "buzzer" ? "border-primary bg-primary/15 shadow-glow" : "border-border bg-background/40"
+              mode === "buzzer"
+                ? "border-primary bg-primary/15 shadow-glow"
+                : "border-border bg-background/40"
             }`}
           >
-            <Smartphone className="h-4 w-4 text-accent mb-1" />
+            <Smartphone className="mb-1 h-4 w-4 text-accent" />
             <b className="block text-xs">Buzzer Local</b>
-            <p className="text-[10px] text-muted-foreground">Même écran · Le plus rapide</p>
+            <p className="text-[10px] text-muted-foreground">Même téléphone</p>
           </button>
           <button
             type="button"
@@ -554,32 +661,36 @@ function SetupScreen({ onStart }: { onStart: (s: Setup) => void }) {
               setMode("tour");
             }}
             className={`rounded-2xl border p-3 text-left transition-all ${
-              mode === "tour" ? "border-primary bg-primary/15 shadow-glow" : "border-border bg-background/40"
+              mode === "tour"
+                ? "border-primary bg-primary/15 shadow-glow"
+                : "border-border bg-background/40"
             }`}
           >
-            <Users className="h-4 w-4 text-secondary mb-1" />
+            <Users className="mb-1 h-4 w-4 text-secondary" />
             <b className="block text-xs">Tour par tour</b>
             <p className="text-[10px] text-muted-foreground">Chacun son tour</p>
           </button>
         </div>
 
         {mode === "online" ? (
-          <div className="mt-3 space-y-2">
+          <div className="space-y-2">
             <Input
-              placeholder="Ton pseudo de joueur (ex: BossHaiti)"
+              placeholder="Ton pseudo public (ex: BossHaiti)"
               value={names[0]}
-              maxLength={18}
-              onChange={(e) => setNames([e.target.value, names[1] ?? "", names[2] ?? "", names[3] ?? ""])}
+              maxLength={20}
+              onChange={(e) => saveMyPseudo(e.target.value)}
             />
           </div>
         ) : (
-          <div className="mt-3 space-y-2">
+          <div className="space-y-2">
             {Array.from({ length: n }).map((_, i) => (
               <Input
                 key={i}
-                placeholder={i === 0 ? `${p.name || "Moi"} (ton portefeuille)` : `Joueur ${i + 1}`}
+                placeholder={
+                  i === 0 ? `${myDisplayName} (ton portefeuille)` : `Pseudo Joueur ${i + 1}`
+                }
                 value={names[i]}
-                maxLength={16}
+                maxLength={18}
                 onChange={(e) => setNames(names.map((x, j) => (j === i ? e.target.value : x)))}
               />
             ))}
@@ -607,7 +718,166 @@ function SetupScreen({ onStart }: { onStart: (s: Setup) => void }) {
         </div>
       </section>
 
-      {/* Boutons d'action selon le mode */}
+      {/* 5. Annuaire de tous les comptes (Pseudos) & Chambres Libres / Privées */}
+      {mode === "online" && (
+        <section className="space-y-4 rounded-2xl bg-card p-4">
+          <div className="flex items-center justify-between">
+            <h2 className="flex items-center gap-2 font-extrabold">
+              <UserCheck className="h-4 w-4 text-primary" /> 5. Comptes Joueurs (Pseudos) & Chambres
+            </h2>
+            <span className="rounded-full bg-primary/15 px-2.5 py-0.5 text-xs font-bold text-primary">
+              {otherPlayers.length} joueurs disponibles
+            </span>
+          </div>
+
+          {/* Barre de recherche de pseudo */}
+          <div className="relative">
+            <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Rechercher le pseudo d'un joueur…"
+              value={playerSearch}
+              onChange={(e) => setPlayerSearch(e.target.value)}
+              className="pl-9"
+            />
+          </div>
+
+          {selectedRivals.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2 rounded-xl bg-primary/10 p-2.5 text-xs">
+              <span className="font-bold text-primary">Adversaires sélectionnés :</span>
+              {selectedRivals.map((rv) => (
+                <span
+                  key={rv}
+                  className="inline-flex items-center gap-1 rounded-full bg-primary px-2.5 py-0.5 font-extrabold text-primary-foreground"
+                >
+                  {rv}
+                  <button type="button" onClick={() => handleChallengePlayer(rv)}>
+                    ×
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
+
+          {/* Liste des pseudos des joueurs pour demander un duel */}
+          <div className="max-h-56 space-y-2 overflow-y-auto pr-1">
+            {otherPlayers.map((rp) => {
+              const isSelected = selectedRivals.includes(rp.pseudo);
+              return (
+                <div
+                  key={rp.id}
+                  className={`flex items-center justify-between rounded-xl border p-2.5 text-xs transition-colors ${
+                    isSelected
+                      ? "border-primary bg-primary/15"
+                      : "border-border bg-background/40 hover:bg-muted/40"
+                  }`}
+                >
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <span
+                      className={`h-2.5 w-2.5 shrink-0 rounded-full ${
+                        rp.online !== false ? "bg-success" : "bg-muted-foreground"
+                      }`}
+                    />
+                    <div className="truncate">
+                      <b className="text-sm">{rp.pseudo}</b>
+                      <span className="ml-2 rounded-full bg-muted px-2 py-0.5 text-[10px] font-bold text-muted-foreground">
+                        Niv. {rp.level}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <Button
+                      size="sm"
+                      variant={isSelected ? "default" : "secondary"}
+                      onClick={() => handleChallengePlayer(rp.pseudo)}
+                      className="h-7 px-2.5 text-xs font-bold"
+                    >
+                      {isSelected ? "Sélectionné ✓" : "+ Choisir"}
+                    </Button>
+                    <Button
+                      size="sm"
+                      disabled={stake > p.coins || matchmaking}
+                      onClick={() => handleStartDirectChallenge(rp.pseudo)}
+                      className="h-7 px-2.5 text-xs font-extrabold"
+                    >
+                      <Swords className="h-3 w-3" /> Défier
+                    </Button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Boutons Chambre Libre / Chambre Privée / Rejoindre par code */}
+          <div className="grid grid-cols-2 gap-2 pt-1">
+            <Button
+              variant="secondary"
+              disabled={stake > p.coins}
+              onClick={() => handleCreateRoom("public")}
+              className="font-bold text-xs"
+            >
+              <Unlock className="h-4 w-4 text-success" /> Créer Chambre Libre
+            </Button>
+            <Button
+              variant="secondary"
+              disabled={stake > p.coins}
+              onClick={() => handleCreateRoom("private")}
+              className="font-bold text-xs"
+            >
+              <Lock className="h-4 w-4 text-accent" /> Créer Chambre Privée
+            </Button>
+          </div>
+
+          <div className="flex gap-2">
+            <Input
+              placeholder="Entrer code chambre (ex: QB1234)"
+              value={joinCodeInput}
+              onChange={(e) => setJoinCodeInput(e.target.value.toUpperCase())}
+              className="uppercase font-mono text-xs"
+            />
+            <Button variant="outline" onClick={() => handleJoinRoom()}>
+              Rejoindre
+            </Button>
+          </div>
+
+          {/* Liste des Chambres Libres ouvertes */}
+          {rooms.filter((r) => r.status === "waiting" && r.visibility !== "private").length > 0 && (
+            <div className="space-y-2 border-t border-border pt-3">
+              <p className="text-xs font-extrabold uppercase tracking-wider text-muted-foreground">
+                Chambres Libres ouvertes (
+                {rooms.filter((r) => r.status === "waiting" && r.visibility !== "private").length})
+              </p>
+              {rooms
+                .filter((r) => r.status === "waiting" && r.visibility !== "private")
+                .slice(0, 5)
+                .map((r) => {
+                  const rPot = calculateDuelPot(r.stake, r.maxPlayers);
+                  return (
+                    <div
+                      key={r.code}
+                      className="flex items-center justify-between rounded-xl border border-border bg-background/40 p-2.5 text-xs"
+                    >
+                      <div>
+                        <span className="inline-flex items-center gap-1 font-mono font-bold text-primary">
+                          <Unlock className="h-3 w-3" /> {r.code}
+                        </span>{" "}
+                        · Hôte : <b>{r.hostName}</b>
+                        <p className="text-muted-foreground">
+                          {r.players.length}/{r.maxPlayers} joueurs · Mise {r.stake} GDS → Gain{" "}
+                          <b className="text-accent">{rPot.winnerPayout} GDS</b>
+                        </p>
+                      </div>
+                      <Button size="sm" onClick={() => handleJoinRoom(r.code)}>
+                        Rejoindre
+                      </Button>
+                    </div>
+                  );
+                })}
+            </div>
+          )}
+        </section>
+      )}
+
+      {/* Bouton principal de lancement */}
       {left <= 0 && stake === 0 ? (
         <div className="space-y-2 rounded-2xl bg-card p-4 text-center">
           <p className="font-semibold">
@@ -628,72 +898,17 @@ function SetupScreen({ onStart }: { onStart: (s: Setup) => void }) {
           </Button>
         </div>
       ) : mode === "online" ? (
-        <div className="space-y-3">
-          <Button
-            size="lg"
-            className="w-full text-base font-extrabold shadow-glow"
-            disabled={stake > p.coins || matchmaking}
-            onClick={handleQuickMatchmaking}
-          >
-            <Swords className="h-5 w-5" />
-            {matchmaking
-              ? `Recherche de ${n - 1} adversaire(s)…`
-              : `Match Rapide (${n} Joueurs · Gain ${pot.winnerPayout} GDS)`}
-          </Button>
-
-          <div className="grid grid-cols-2 gap-2">
-            <Button
-              variant="secondary"
-              disabled={stake > p.coins}
-              onClick={handleCreateRoom}
-              className="font-bold"
-            >
-              <Plus className="h-4 w-4" /> Créer un Salon privé
-            </Button>
-            <div className="flex gap-1">
-              <Input
-                placeholder="Code ex: QB1234"
-                value={joinCodeInput}
-                onChange={(e) => setJoinCodeInput(e.target.value.toUpperCase())}
-                className="uppercase font-mono text-xs"
-              />
-              <Button variant="outline" onClick={() => handleJoinRoom()}>
-                Rejoindre
-              </Button>
-            </div>
-          </div>
-
-          {rooms.filter((r) => r.status === "waiting").length > 0 && (
-            <div className="rounded-2xl bg-card p-4 space-y-2">
-              <p className="text-xs font-extrabold uppercase tracking-wider text-muted-foreground">
-                Salons publics ouverts
-              </p>
-              {rooms
-                .filter((r) => r.status === "waiting")
-                .slice(0, 4)
-                .map((r) => {
-                  const rPot = calculateDuelPot(r.stake, r.maxPlayers);
-                  return (
-                    <div
-                      key={r.code}
-                      className="flex items-center justify-between rounded-xl border border-border bg-background/40 p-2.5 text-xs"
-                    >
-                      <div>
-                        <b className="font-mono text-primary">{r.code}</b> · Hôte : <b>{r.hostName}</b>
-                        <p className="text-muted-foreground">
-                          {r.players.length}/{r.maxPlayers} joueurs · Mise {r.stake} GDS → Gain{" "}
-                          <b className="text-accent">{rPot.winnerPayout} GDS</b>
-                        </p>
-                      </div>
-                      <Button size="sm" onClick={() => handleJoinRoom(r.code)}>
-                        Rejoindre
-                      </Button>
-                    </div>
-                  );
-                })}
-            </div>
-          )}
-        </div>
+        <Button
+          size="lg"
+          className="w-full text-base font-extrabold shadow-glow"
+          disabled={stake > p.coins || matchmaking}
+          onClick={() => handleStartDirectChallenge()}
+        >
+          <Swords className="h-5 w-5" />
+          {matchmaking
+            ? `Connexion au duel (${n} joueurs)…`
+            : `Lancer le Duel (${n} Joueurs · Gain ${pot.winnerPayout} GDS)`}
+        </Button>
       ) : (
         <Button
           size="lg"
@@ -773,11 +988,9 @@ function Game({
       else if (i !== -1) sfx.wrong();
       const myDelta = ok ? 80 + time * 8 + (q.difficulty ?? 1) * 15 : 0;
 
-      // Simulate rival players' answers in real-time competitive range
       setScores((prev) =>
         prev.map((val, pIndex) => {
           if (pIndex === 0) return val + myDelta;
-          // Rival accuracy depends slightly on question difficulty
           const rivalHitChance = Math.max(0.42, 0.78 - ((q.difficulty ?? 1) - 1) * 0.08);
           const rivalOk = Math.random() < rivalHitChance;
           if (!rivalOk) return val;
@@ -817,7 +1030,7 @@ function Game({
       if (stake > 0) {
         addCoins(
           pot.winnerPayout,
-          `Victoire Duel (${names.length}J · Pot ${pot.totalPot} GDS − ${pot.siteFee} GDS site)`,
+          `Gain Duel (${names.length}J · Pot ${pot.totalPot} GDS − ${pot.siteFee} GDS site)`,
           "duel",
           (p) => ({ xp: p.xp + 60, gamesPlayed: p.gamesPlayed + 1 }),
         );
@@ -835,9 +1048,7 @@ function Game({
   }, [done]);
 
   if (done) {
-    const ranking = names
-      .map((n, i) => ({ n, s: scores[i]!, i }))
-      .sort((a, b) => b.s - a.s);
+    const ranking = names.map((n, i) => ({ n, s: scores[i]!, i })).sort((a, b) => b.s - a.s);
     const champ = ranking[0]!;
     const iWon = champ.i === 0;
     const text = `⚔️ Duel QuizBoss (${names.length} joueurs) : ${champ.n} remporte ${pot.winnerPayout} GDS avec ${champ.s} pts ! ${ranking
@@ -852,10 +1063,12 @@ function Game({
           <h1 className="mt-2 text-3xl font-extrabold">{champ.n} gagne le duel !</h1>
           {stake > 0 && (
             <div className="mt-3 inline-flex flex-col rounded-2xl bg-background/25 px-4 py-2 text-xs font-bold">
-              <span>Pot total : {pot.totalPot} GDS ({stake} GDS × {names.length})</span>
-              <span>Commission plateforme : −{pot.siteFee} GDS</span>
+              <span>
+                Pot total : {pot.totalPot} GDS ({stake} GDS × {names.length})
+              </span>
+              <span>Frais plateforme : −{pot.siteFee} GDS</span>
               <span className="mt-1 text-base font-extrabold text-accent">
-                Gain remporté : +{pot.winnerPayout} GDS
+                Gain échangeable remporté : +{pot.winnerPayout} GDS
               </span>
             </div>
           )}
@@ -908,11 +1121,7 @@ function Game({
         <span className="flex items-center gap-1.5">
           <span>
             ⚔️{" "}
-            {mode === "online"
-              ? "Duel En Ligne"
-              : mode === "buzzer"
-                ? "Buzzer"
-                : "Tour par tour"}
+            {mode === "online" ? "Duel En Ligne" : mode === "buzzer" ? "Buzzer" : "Tour par tour"}
           </span>
           {stake > 0 && (
             <span className="rounded-full bg-accent/20 px-2.5 py-0.5 text-accent">
@@ -944,7 +1153,9 @@ function Game({
       </div>
 
       <div className="flex items-center gap-3">
-        <Timer className={`h-5 w-5 ${time <= 4 ? "text-destructive animate-bounce" : "text-primary"}`} />
+        <Timer
+          className={`h-5 w-5 ${time <= 4 ? "text-destructive animate-bounce" : "text-primary"}`}
+        />
         <div className="h-2.5 flex-1 overflow-hidden rounded-full bg-muted">
           <div
             className={`h-full transition-all duration-1000 ease-linear ${

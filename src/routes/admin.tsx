@@ -12,12 +12,17 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import {
   fetchDeposits,
+  fetchPaymentMethods,
   PAGE_SLOTS,
   PAGE_STATUS,
+  savePaymentMethods,
   SETTING_KEYS,
   updateDepositStatus,
   uploadMedia,
+  type PaymentMethodConfig,
 } from "@/lib/site";
+import { resetLocalBalance } from "@/lib/player";
+import { generateSmartQuestionsBatch, TOTAL_CATALOG_COUNT } from "@/lib/infiniteQuizCatalog";
 
 export const Route = createFileRoute("/admin")({
   ssr: false,
@@ -147,14 +152,15 @@ function Dashboard({ email }: { email: string }) {
         <TabsList className="flex h-auto flex-wrap">
           <TabsTrigger value="deposits">💳 Dépôts</TabsTrigger>
           <TabsTrigger value="withdrawals">💸 Retraits</TabsTrigger>
-          <TabsTrigger value="questions">Questions</TabsTrigger>
-          <TabsTrigger value="quotes">Statuts</TabsTrigger>
-          <TabsTrigger value="banners">Bannières</TabsTrigger>
+          <TabsTrigger value="payment-methods">🏦 Méthodes Paiement/Retrait</TabsTrigger>
+          <TabsTrigger value="banners">🖼️ Flyers & Bannières</TabsTrigger>
+          <TabsTrigger value="questions">🧠 Questions (+12k)</TabsTrigger>
+          <TabsTrigger value="quotes">✨ Statuts</TabsTrigger>
           <TabsTrigger value="embeds">Intégrations</TabsTrigger>
           <TabsTrigger value="notifs">Notifications</TabsTrigger>
           <TabsTrigger value="stickers">Stickers</TabsTrigger>
           <TabsTrigger value="pages">Pages</TabsTrigger>
-          <TabsTrigger value="settings">⚙️ Réglages & Comptes</TabsTrigger>
+          <TabsTrigger value="settings">⚙️ Réglages & Soldes</TabsTrigger>
         </TabsList>
         <TabsContent value="deposits">
           <DepositsAdmin />
@@ -162,7 +168,11 @@ function Dashboard({ email }: { email: string }) {
         <TabsContent value="withdrawals">
           <Withdrawals />
         </TabsContent>
+        <TabsContent value="payment-methods">
+          <PaymentMethodsAdmin />
+        </TabsContent>
         <TabsContent value="questions">
+          <QuestionsSmartGenerator />
           <Crud
             table="questions"
             title={(r) => r.question}
@@ -170,7 +180,10 @@ function Dashboard({ email }: { email: string }) {
               `${r.category} · ${r.lang} · D${r.difficulty ?? 1} · ✔ ${r.options?.[r.correct_index]}`
             }
             fields={[
-              { k: "category", label: "Catégorie (musique, geographie, culture, cinema, informatique)" },
+              {
+                k: "category",
+                label: "Catégorie (musique, geographie, culture, cinema, informatique)",
+              },
               { k: "lang", label: "Langue (fr, ht, en)" },
               { k: "question", label: "Question", long: true },
               { k: "options", label: "Réponses (une par ligne, 4 max)", long: true, list: true },
@@ -186,7 +199,7 @@ function Dashboard({ email }: { email: string }) {
             title={(r) => `${r.emoji ?? ""} ${r.content}`}
             sub={(r) => `${r.kind} · ${r.theme}`}
             fields={[
-              { k: "kind", label: "Type (quote, motivation, sticker)" },
+              { k: "kind", label: "Type (quote, motivation, proverbe, boss, sticker)" },
               { k: "content", label: "Texte", long: true },
               { k: "author", label: "Auteur (optionnel)" },
               { k: "emoji", label: "Emoji" },
@@ -195,16 +208,31 @@ function Dashboard({ email }: { email: string }) {
           />
         </TabsContent>
         <TabsContent value="banners">
+          <div className="mb-2 rounded-2xl bg-card p-3.5 text-xs text-muted-foreground">
+            🖼️ Importe ici tes <b>Flyers, affiches ou bannières</b> personnalisés. Si tu laisses le
+            texte vide avec une image, le flyer s'affichera en grand format visuel sur le site.
+          </div>
           <Crud
             table="banners"
-            title={(r) => r.title}
+            title={(r) => r.title || "Flyer visuel"}
             sub={(r) => `${r.placement} · ${r.active ? "active" : "inactive"}`}
             fields={[
-              { k: "title", label: "Titre" },
-              { k: "body", label: "Texte", long: true },
-              { k: "image_url", label: "URL de l'image (optionnel)" },
-              { k: "link_url", label: "Lien (ex: /invite ou https://…)" },
-              { k: "placement", label: "Emplacement (home, result)" },
+              { k: "title", label: "Titre du Flyer / Bannière (mettre '-' pour masquer le titre)" },
+              {
+                k: "body",
+                label: "Texte descriptif (laisser vide pour un Flyer image plein format)",
+                long: true,
+              },
+              {
+                k: "image_url",
+                label: "Image du Flyer / Bannière (Upload direct ou URL)",
+                upload: "banners",
+              },
+              { k: "link_url", label: "Lien au clic (ex: /duel, /invite ou https://…)" },
+              {
+                k: "placement",
+                label: "Emplacement (all, home, home-bottom, result, between-questions, statuts)",
+              },
               { k: "active", label: "Active (true/false)", bool: true },
             ]}
           />
@@ -266,7 +294,8 @@ function DepositsAdmin() {
   return (
     <div className="space-y-3 pt-2">
       <div className="rounded-2xl bg-card p-3.5 text-xs text-muted-foreground">
-        💡 Pour modifier tes numéros de réception <b>MonCash / Natcash / PayPal / Virement</b> ou le montant minimum de dépôt, rends-toi dans l'onglet <b>⚙️ Réglages & Comptes</b>.
+        💡 Pour modifier tes numéros de réception <b>MonCash / Natcash / PayPal / Virement</b> ou le
+        montant minimum de dépôt, rends-toi dans l'onglet <b>⚙️ Réglages & Comptes</b>.
       </div>
 
       <div className="flex flex-wrap gap-2">
@@ -333,7 +362,8 @@ function DepositsAdmin() {
           </div>
 
           <p className="text-xs text-muted-foreground">
-            Compte expéditeur : <b className="text-foreground">{d.sender_account}</b> · Réf transaction :{" "}
+            Compte expéditeur : <b className="text-foreground">{d.sender_account}</b> · Réf
+            transaction :{" "}
             <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-foreground">
               {d.transaction_ref}
             </code>
@@ -449,7 +479,10 @@ function Crud({
             : v || null;
     }
     const q = edit!.id
-      ? supabase.from(table).update(payload as never).eq("id", edit!.id)
+      ? supabase
+          .from(table)
+          .update(payload as never)
+          .eq("id", edit!.id)
       : supabase.from(table).insert(payload as never);
     const { error } = await q;
     if (error) return void toast.error(error.message);
@@ -470,29 +503,45 @@ function Crud({
             <div key={f.k}>
               <Label>{f.label}</Label>
               {f.upload ? (
-                <div className="flex items-center gap-2">
-                  {edit[f.k] && (
-                    <img src={edit[f.k]} alt="" className="h-12 w-12 rounded object-cover" />
-                  )}
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    {edit[f.k] && (
+                      <img
+                        src={edit[f.k]}
+                        alt=""
+                        className="h-14 w-14 rounded-lg object-cover border border-border"
+                      />
+                    )}
+                    <Input
+                      type="file"
+                      accept="image/*"
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+                        try {
+                          const url = await uploadMedia(file, f.upload!);
+                          setEdit({ ...edit, [f.k]: url });
+                          toast.success("Image importée ✅");
+                        } catch (err) {
+                          toast.error((err as Error).message);
+                        }
+                      }}
+                    />
+                    {edit[f.k] && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => setEdit({ ...edit, [f.k]: "" })}
+                      >
+                        Retirer
+                      </Button>
+                    )}
+                  </div>
                   <Input
-                    type="file"
-                    accept="image/*"
-                    onChange={async (e) => {
-                      const file = e.target.files?.[0];
-                      if (!file) return;
-                      try {
-                        const url = await uploadMedia(file, f.upload!);
-                        setEdit({ ...edit, [f.k]: url });
-                      } catch (err) {
-                        toast.error((err as Error).message);
-                      }
-                    }}
+                    placeholder="Ou coller une URL d'image directe (https://…)"
+                    value={edit[f.k] ?? ""}
+                    onChange={(e) => setEdit({ ...edit, [f.k]: e.target.value })}
                   />
-                  {edit[f.k] && (
-                    <Button size="sm" variant="ghost" onClick={() => setEdit({ ...edit, [f.k]: "" })}>
-                      Retirer
-                    </Button>
-                  )}
                 </div>
               ) : f.long ? (
                 <Textarea
@@ -952,6 +1001,260 @@ function PagesAdmin() {
   );
 }
 
+function PaymentMethodsAdmin() {
+  const qc = useQueryClient();
+  const { data: methods = [] } = useQuery({
+    queryKey: ["payment_methods"],
+    queryFn: fetchPaymentMethods,
+  });
+  const [list, setList] = useState<PaymentMethodConfig[]>([]);
+  const [editing, setEditing] = useState<PaymentMethodConfig | null>(null);
+
+  useEffect(() => {
+    setList(methods);
+  }, [methods]);
+
+  const handleSaveAll = async (next: PaymentMethodConfig[]) => {
+    setList(next);
+    await savePaymentMethods(next);
+    qc.invalidateQueries({ queryKey: ["payment_methods"] });
+    toast.success("Méthodes de paiement et retrait mises à jour !");
+  };
+
+  const saveEdit = async () => {
+    if (!editing || !editing.name.trim()) {
+      return void toast.error("Le nom de la méthode est requis");
+    }
+    const id =
+      editing.id ||
+      editing.name
+        .toLowerCase()
+        .replace(/[^a-z0-9]/g, "-")
+        .slice(0, 24) ||
+      `pm-${Date.now()}`;
+    const item = { ...editing, id };
+    const exists = list.some((m) => m.id === id);
+    const next = exists ? list.map((m) => (m.id === id ? item : m)) : [...list, item];
+    await handleSaveAll(next);
+    setEditing(null);
+  };
+
+  const removeMethod = async (id: string) => {
+    const next = list.filter((m) => m.id !== id);
+    await handleSaveAll(next);
+  };
+
+  return (
+    <div className="space-y-3 pt-2">
+      <div className="rounded-2xl bg-card p-4 text-xs text-muted-foreground">
+        🏦 Configure ici les <b>méthodes de Dépôt et de Retrait</b> affichées aux joueurs (MonCash,
+        Natcash, PayPal, Virement, Zelle, USDT, etc.). Tout changement est appliqué immédiatement
+        sur les pages Wallet et Retrait.
+      </div>
+
+      {editing ? (
+        <div className="space-y-3 rounded-2xl bg-card p-4 animate-pop">
+          <h3 className="font-extrabold">
+            {editing.id ? `Modifier ${editing.name}` : "Nouvelle méthode de paiement / retrait"}
+          </h3>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div>
+              <Label>Nom affiché (ex: MonCash, Natcash, Zelle)</Label>
+              <Input
+                value={editing.name}
+                onChange={(e) => setEditing({ ...editing, name: e.target.value })}
+              />
+            </div>
+            <div>
+              <Label>Compte / Numéro de réception (pour les dépôts)</Label>
+              <Input
+                placeholder="Ex: +509 3700-0000 ou email@paypal.com"
+                value={editing.receiverAccount}
+                onChange={(e) => setEditing({ ...editing, receiverAccount: e.target.value })}
+              />
+            </div>
+            <div>
+              <Label>Nom du bénéficiaire affiché</Label>
+              <Input
+                placeholder="Ex: QuizBoss Haïti"
+                value={editing.receiverName}
+                onChange={(e) => setEditing({ ...editing, receiverName: e.target.value })}
+              />
+            </div>
+            <div>
+              <Label>Question posée au joueur (champ numéro/compte)</Label>
+              <Input
+                placeholder="Ex: Ton numéro MonCash"
+                value={editing.accountLabel}
+                onChange={(e) => setEditing({ ...editing, accountLabel: e.target.value })}
+              />
+            </div>
+          </div>
+          <div>
+            <Label>Instructions de dépôt pour cette méthode</Label>
+            <Textarea
+              rows={2}
+              value={editing.instructions}
+              onChange={(e) => setEditing({ ...editing, instructions: e.target.value })}
+            />
+          </div>
+          <div className="flex flex-wrap gap-3 pt-1 text-xs font-bold">
+            <label className="flex items-center gap-1.5 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={editing.forDeposit}
+                onChange={(e) => setEditing({ ...editing, forDeposit: e.target.checked })}
+              />
+              Disponible pour Dépôt
+            </label>
+            <label className="flex items-center gap-1.5 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={editing.forWithdrawal}
+                onChange={(e) => setEditing({ ...editing, forWithdrawal: e.target.checked })}
+              />
+              Disponible pour Retrait
+            </label>
+            <label className="flex items-center gap-1.5 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={editing.active}
+                onChange={(e) => setEditing({ ...editing, active: e.target.checked })}
+              />
+              Méthode Active
+            </label>
+          </div>
+          <div className="flex gap-2">
+            <Button onClick={saveEdit}>Enregistrer la méthode</Button>
+            <Button variant="ghost" onClick={() => setEditing(null)}>
+              Annuler
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <Button
+          onClick={() =>
+            setEditing({
+              id: "",
+              name: "",
+              receiverAccount: "",
+              receiverName: "QuizBoss",
+              accountLabel: "Ton numéro / compte",
+              instructions: "Envoie le montant puis joins la capture d'écran du reçu.",
+              forDeposit: true,
+              forWithdrawal: true,
+              active: true,
+            })
+          }
+        >
+          <Plus /> Ajouter une méthode de paiement / retrait
+        </Button>
+      )}
+
+      <div className="space-y-2">
+        {list.map((m) => (
+          <div
+            key={m.id}
+            className="flex items-center justify-between gap-2 rounded-2xl bg-card p-4 text-sm"
+          >
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <b className="text-base">{m.name}</b>
+                {m.forDeposit && (
+                  <span className="rounded-full bg-primary/15 px-2 py-0.5 text-[10px] font-bold text-primary">
+                    Dépôt
+                  </span>
+                )}
+                {m.forWithdrawal && (
+                  <span className="rounded-full bg-accent/15 px-2 py-0.5 text-[10px] font-bold text-accent">
+                    Retrait
+                  </span>
+                )}
+                {!m.active && (
+                  <span className="rounded-full bg-destructive/20 px-2 py-0.5 text-[10px] font-bold text-destructive">
+                    Désactivée
+                  </span>
+                )}
+              </div>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                Réception : <b className="text-foreground">{m.receiverAccount}</b> ({m.receiverName}
+                )
+              </p>
+            </div>
+            <Button size="icon" variant="ghost" onClick={() => setEditing(m)}>
+              <Pencil className="h-4 w-4" />
+            </Button>
+            <Button size="icon" variant="ghost" onClick={() => removeMethod(m.id)}>
+              <Trash2 className="h-4 w-4" />
+            </Button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function QuestionsSmartGenerator() {
+  const qc = useQueryClient();
+  const [cat, setCat] = useState("mix");
+  const [diff, setDiff] = useState(3);
+  const [busy, setBusy] = useState(false);
+
+  const handleGenerate = async () => {
+    setBusy(true);
+    const batch = generateSmartQuestionsBatch(cat, diff, 8);
+    const { error } = await supabase.from("questions").insert(batch as never);
+    setBusy(false);
+    if (error) return void toast.error(error.message);
+    toast.success(`+8 nouvelles questions générées et ajoutées à la base !`);
+    qc.invalidateQueries({ queryKey: ["admin", "questions"] });
+  };
+
+  return (
+    <div className="mb-3 space-y-3 rounded-2xl border border-primary/30 bg-card p-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <h3 className="text-sm font-extrabold text-primary">
+            ⚡ Catalogue Intelligent & IA (+{TOTAL_CATALOG_COUNT.toLocaleString("fr-FR")} Quiz
+            intégrés)
+          </h3>
+          <p className="text-xs text-muted-foreground">
+            Le site pioche automatiquement dans le catalogue de +12 480 questions vérifiées. Tu peux
+            aussi générer et injecter des lots dans ta table Supabase en 1 clic :
+          </p>
+        </div>
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <select
+          value={cat}
+          onChange={(e) => setCat(e.target.value)}
+          className="rounded-xl border border-border bg-background px-3 py-2 text-xs font-bold"
+        >
+          <option value="mix">🎲 Toutes catégories (Mix)</option>
+          <option value="musique">🎵 Musique & TikTok</option>
+          <option value="geographie">🌍 Géographie</option>
+          <option value="culture">🧠 Culture Générale</option>
+          <option value="cinema">🎬 Cinéma & Séries</option>
+          <option value="informatique">💻 Informatique & Tech</option>
+        </select>
+        <select
+          value={diff}
+          onChange={(e) => setDiff(Number(e.target.value))}
+          className="rounded-xl border border-border bg-background px-3 py-2 text-xs font-bold"
+        >
+          <option value={2}>🎯 Difficulté 2 (Moyen)</option>
+          <option value={3}>🔥 Difficulté 3 (Difficile)</option>
+          <option value={4}>⚡ Difficulté 4 (Expert)</option>
+          <option value={5}>💀 Difficulté 5 (Mode BOSS)</option>
+        </select>
+        <Button size="sm" onClick={handleGenerate} disabled={busy}>
+          <Plus className="h-4 w-4" /> {busy ? "Génération…" : "Générer +8 Questions"}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 function SettingsAdmin() {
   const qc = useQueryClient();
   const { data: rows = [] } = useQuery({
@@ -959,9 +1262,12 @@ function SettingsAdmin() {
     queryFn: async () => (await supabase.from("app_settings").select("*")).data ?? [],
   });
   const [vals, setVals] = useState<Record<string, string>>({});
+  const [resetting, setResetting] = useState(false);
+
   useEffect(() => {
     setVals(Object.fromEntries(rows.map((r) => [r.key, r.value ?? ""])));
   }, [rows]);
+
   const save = async () => {
     const payload = SETTING_KEYS.map(({ key }) => ({
       key,
@@ -974,30 +1280,73 @@ function SettingsAdmin() {
     qc.invalidateQueries({ queryKey: ["settings"] });
     qc.invalidateQueries({ queryKey: ["admin", "settings"] });
   };
+
+  const handleGlobalResetBalances = async () => {
+    setResetting(true);
+    try {
+      const stamp = `reset-${Date.now()}`;
+      await supabase.from("app_settings").upsert({
+        key: "global_balance_reset_at",
+        value: stamp,
+        updated_at: new Date().toISOString(),
+      });
+      await supabase
+        .from("profiles")
+        .update({ coins: 0, updated_at: new Date().toISOString() })
+        .neq("id", "00000000-0000-0000-0000-000000000000");
+      resetLocalBalance();
+      toast.success("✅ Le solde GDS de tous les joueurs a été réinitialisé à 0 GDS !");
+    } catch {
+      toast.error("Erreur lors de la réinitialisation");
+    } finally {
+      setResetting(false);
+    }
+  };
+
   return (
-    <div className="space-y-3 rounded-2xl bg-card p-4 pt-4">
-      {SETTING_KEYS.map(({ key, label }) => (
-        <div key={key}>
-          <Label>{label}</Label>
-          {key === "head_script" || key === "deposit_instructions" || key === "deposit_bank_info" ? (
-            <Textarea
-              rows={4}
-              className="font-mono text-xs"
-              value={vals[key] ?? ""}
-              onChange={(e) => setVals({ ...vals, [key]: e.target.value })}
-            />
-          ) : (
-            <Input
-              value={vals[key] ?? ""}
-              onChange={(e) => setVals({ ...vals, [key]: e.target.value })}
-            />
-          )}
-        </div>
-      ))}
-      <p className="text-xs text-muted-foreground">
-        Configure ici tes numéros MonCash / Natcash / PayPal pour les dépôts manuels, les seuils de retrait, ainsi que tes scripts de bannières publicitaires.
-      </p>
-      <Button onClick={save}>Enregistrer les réglages</Button>
+    <div className="space-y-4 pt-2">
+      {/* Bloc de réinitialisation globale des soldes GDS */}
+      <div className="rounded-2xl border border-destructive/40 bg-destructive/10 p-4 space-y-2">
+        <h3 className="font-extrabold text-destructive">
+          🔄 Réinitialisation globale du solde GDS des joueurs
+        </h3>
+        <p className="text-xs text-muted-foreground">
+          Remet immédiatement à <b>0 GDS</b> le solde échangeable de tous les comptes joueurs (local
+          et base de données).
+        </p>
+        <Button
+          variant="destructive"
+          size="sm"
+          disabled={resetting}
+          onClick={handleGlobalResetBalances}
+        >
+          {resetting ? "Réinitialisation…" : "Réinitialiser le solde de tous les joueurs à 0 GDS"}
+        </Button>
+      </div>
+
+      <div className="space-y-3 rounded-2xl bg-card p-4">
+        {SETTING_KEYS.map(({ key, label }) => (
+          <div key={key}>
+            <Label>{label}</Label>
+            {key === "head_script" ||
+            key === "monetag_inpage_script" ||
+            key === "deposit_instructions" ? (
+              <Textarea
+                rows={4}
+                className="font-mono text-xs"
+                value={vals[key] ?? ""}
+                onChange={(e) => setVals({ ...vals, [key]: e.target.value })}
+              />
+            ) : (
+              <Input
+                value={vals[key] ?? ""}
+                onChange={(e) => setVals({ ...vals, [key]: e.target.value })}
+              />
+            )}
+          </div>
+        ))}
+        <Button onClick={save}>Enregistrer les réglages</Button>
+      </div>
     </div>
   );
 }

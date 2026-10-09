@@ -3,7 +3,8 @@ import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { UserRound } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
-import { levelFromXp, usePlayer, useSession } from "@/lib/player";
+import { levelFromXp, updatePlayer, usePlayer, useSession } from "@/lib/player";
+import { registerPlayerInDirectory } from "@/lib/site";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -14,7 +15,10 @@ export const Route = createFileRoute("/auth")({
   head: () => ({
     meta: [
       { title: "Mon compte — QuizBoss" },
-      { name: "description", content: "Connecte-toi pour sauvegarder tes pièces, ton XP et ton niveau." },
+      {
+        name: "description",
+        content: "Connecte-toi pour sauvegarder ton solde GDS, ton XP et ton niveau.",
+      },
       { property: "og:title", content: "Mon compte — QuizBoss" },
       { property: "og:description", content: "Sauvegarde ta progression QuizBoss." },
     ],
@@ -28,7 +32,7 @@ function AuthPage() {
   const qc = useQueryClient();
   const navigate = useNavigate();
   const [mode, setMode] = useState<"in" | "up">("in");
-  const [f, setF] = useState({ name: "", email: "", password: "" });
+  const [f, setF] = useState({ name: p.name || "", email: "", password: "" });
   const [busy, setBusy] = useState(false);
 
   if (session === undefined) return null;
@@ -41,15 +45,32 @@ function AuthPage() {
           <h1 className="mt-2 text-2xl font-extrabold">{p.name || "Mon compte"}</h1>
           <p className="text-sm text-muted-foreground">{session.user.email}</p>
           <div className="mt-4 grid grid-cols-3 gap-2 text-sm">
-            <div className="rounded-xl bg-muted p-3"><b className="block text-lg text-accent">{p.coins}</b>pièces</div>
-            <div className="rounded-xl bg-muted p-3"><b className="block text-lg text-primary">{levelFromXp(p.xp)}</b>niveau</div>
-            <div className="rounded-xl bg-muted p-3"><b className="block text-lg">{p.gamesPlayed}</b>parties</div>
+            <div className="rounded-xl bg-muted p-3">
+              <b className="block text-lg text-accent">{p.coins} GDS</b>solde duel
+            </div>
+            <div className="rounded-xl bg-muted p-3">
+              <b className="block text-lg text-primary">{p.quizPoints ?? 0}</b>pts quiz
+            </div>
+            <div className="rounded-xl bg-muted p-3">
+              <b className="block text-lg">Niv. {levelFromXp(p.xp)}</b>
+              {p.gamesPlayed} parties
+            </div>
           </div>
-          <p className="mt-3 text-xs text-muted-foreground">✅ Ta progression est sauvegardée sur ton compte.</p>
+          <p className="mt-3 text-xs text-muted-foreground">
+            ✅ Ton pseudo apparaît dans le salon Duel et ta progression est sauvegardée.
+          </p>
         </div>
-        <Button variant="outline" className="w-full" onClick={async () => {
-          await qc.cancelQueries(); await supabase.auth.signOut(); navigate({ to: "/", replace: true });
-        }}>Se déconnecter</Button>
+        <Button
+          variant="outline"
+          className="w-full"
+          onClick={async () => {
+            await qc.cancelQueries();
+            await supabase.auth.signOut();
+            navigate({ to: "/", replace: true });
+          }}
+        >
+          Se déconnecter
+        </Button>
       </div>
     );
 
@@ -57,33 +78,99 @@ function AuthPage() {
     e.preventDefault();
     setBusy(true);
     if (mode === "in") {
-      const { error } = await supabase.auth.signInWithPassword({ email: f.email, password: f.password });
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: f.email,
+        password: f.password,
+      });
       setBusy(false);
       if (error) return void toast.error("Email ou mot de passe incorrect");
+      const pseudo =
+        (data.user?.user_metadata?.display_name as string) ||
+        p.name ||
+        f.email.split("@")[0] ||
+        "Joueur";
+      await registerPlayerInDirectory({
+        id: data.user?.id || p.id,
+        pseudo,
+        level: levelFromXp(p.xp),
+      });
       toast.success("Bon retour ! 🎮");
       navigate({ to: "/" });
     } else {
+      const cleanPseudo = f.name.trim().slice(0, 40);
       const { data, error } = await supabase.auth.signUp({
-        email: f.email, password: f.password,
-        options: { emailRedirectTo: window.location.origin, data: { display_name: f.name.trim().slice(0, 40) } },
+        email: f.email,
+        password: f.password,
+        options: { emailRedirectTo: window.location.origin, data: { display_name: cleanPseudo } },
       });
       setBusy(false);
       if (error) return void toast.error(error.message);
+      if (cleanPseudo) {
+        updatePlayer(() => ({ name: cleanPseudo }));
+        await registerPlayerInDirectory({
+          id: data.user?.id || p.id,
+          pseudo: cleanPseudo,
+          level: levelFromXp(p.xp),
+        });
+      }
       if (!data.session) toast.success("Compte créé ! Confirme ton email pour te connecter.");
+      else {
+        toast.success("Compte créé avec succès ! 🎮");
+        navigate({ to: "/" });
+      }
     }
   };
 
   return (
-    <form onSubmit={submit} className="mx-auto mt-6 max-w-sm space-y-4 rounded-3xl bg-card p-6 animate-pop">
+    <form
+      onSubmit={submit}
+      className="mx-auto mt-6 max-w-sm space-y-4 rounded-3xl bg-card p-6 animate-pop"
+    >
       <h1 className="text-2xl font-extrabold">{mode === "in" ? "Connexion" : "Créer un compte"}</h1>
-      <p className="text-sm text-muted-foreground">Sauvegarde tes pièces, ton XP et ton niveau sur tous tes appareils.</p>
+      <p className="text-sm text-muted-foreground">
+        Sauvegarde tes pièces, ton XP et ton niveau sur tous tes appareils.
+      </p>
       {mode === "up" && (
-        <div><Label htmlFor="n">Pseudo</Label><Input id="n" required maxLength={40} value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} /></div>
+        <div>
+          <Label htmlFor="n">Pseudo</Label>
+          <Input
+            id="n"
+            required
+            maxLength={40}
+            value={f.name}
+            onChange={(e) => setF({ ...f, name: e.target.value })}
+          />
+        </div>
       )}
-      <div><Label htmlFor="e">Email</Label><Input id="e" type="email" required value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} /></div>
-      <div><Label htmlFor="pw">Mot de passe</Label><Input id="pw" type="password" required minLength={8} value={f.password} onChange={(e) => setF({ ...f, password: e.target.value })} /></div>
-      <Button className="w-full" size="lg" disabled={busy}>{mode === "in" ? "Se connecter" : "S'inscrire"}</Button>
-      <button type="button" className="w-full text-sm text-muted-foreground" onClick={() => setMode(mode === "in" ? "up" : "in")}>
+      <div>
+        <Label htmlFor="e">Email</Label>
+        <Input
+          id="e"
+          type="email"
+          required
+          value={f.email}
+          onChange={(e) => setF({ ...f, email: e.target.value })}
+        />
+      </div>
+      <div>
+        <Label htmlFor="pw">Mot de passe</Label>
+        <Input
+          id="pw"
+          type="password"
+          required
+          minLength={8}
+          value={f.password}
+          onChange={(e) => setF({ ...f, password: e.target.value })}
+        />
+      </div>
+      <Button className="w-full" size="lg" disabled={busy}>
+        {mode === "in" ? "Se connecter" : "S'inscrire"}
+      </Button>
+      <button
+        type="button"
+        className="w-full text-sm text-muted-foreground"
+        onClick={() => setMode(mode === "in" ? "up" : "in")}
+      >
         {mode === "in" ? "Pas encore de compte ? S'inscrire" : "J'ai déjà un compte"}
       </button>
     </form>

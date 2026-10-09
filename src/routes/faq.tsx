@@ -5,7 +5,10 @@ export const Route = createFileRoute("/faq")({
   head: () => ({
     meta: [
       { title: "FAQ — QuizBoss" },
-      { name: "description", content: "Réponses aux questions fréquentes sur QuizBoss : pièces, niveaux, retraits." },
+      {
+        name: "description",
+        content: "Réponses aux questions fréquentes sur QuizBoss : pièces, niveaux, retraits.",
+      },
       { property: "og:title", content: "FAQ — QuizBoss" },
       { property: "og:description", content: "Toutes les réponses sur QuizBoss." },
     ],

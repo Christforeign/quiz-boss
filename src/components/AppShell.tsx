@@ -46,8 +46,8 @@ function useReferralCapture() {
     supabase
       .from("referrals")
       .insert({ referrer_id: ref, invitee_device: p.id })
-      .then(({ error }) => {
-        if (!error) addCoins(REFERRAL_BONUS, "Bonus de bienvenue", "reward", () => ({ referredBy: ref }));
+      .then(() => {
+        // Referral recorded for bonus duels & XP
       });
   }, []);
 }
@@ -137,7 +137,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               aria-label="Mon portefeuille"
               className="flex items-center gap-1 rounded-full bg-accent/15 px-3 py-1 text-accent transition-transform active:scale-95"
             >
-              <Coins className="h-4 w-4" /> {player.coins} <span className="text-[11px] opacity-85">GDS</span>
+              <Coins className="h-4 w-4" /> {player.coins}{" "}
+              <span className="text-[11px] opacity-85">GDS</span>
             </Link>
             <span className="rounded-full bg-primary/15 px-2.5 py-1 text-xs text-primary">
               Niv. {levelFromXp(player.xp)}
@@ -181,27 +182,69 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   );
 }
 
+function injectHtmlSnippetIntoHead(html: string, holderId: string) {
+  // Ignorer l'ancien script All-in-One (quge5.com / 228397) s'il était resté en base
+  if (html.includes("quge5.com") || html.includes("228397")) return;
+  if (document.getElementById(holderId)) return;
+
+  const holder = document.createElement("div");
+  holder.id = holderId;
+  holder.style.display = "none";
+  const tpl = document.createElement("template");
+  tpl.innerHTML = html;
+  tpl.content.childNodes.forEach((n) => {
+    if (n instanceof HTMLScriptElement) {
+      const sc = document.createElement("script");
+      Array.from(n.attributes).forEach((a) => sc.setAttribute(a.name, a.value));
+      sc.text = n.text;
+      document.head.appendChild(sc);
+    } else {
+      holder.appendChild(n.cloneNode(true));
+    }
+  });
+  document.body.appendChild(holder);
+}
+
 function useInjectedScripts() {
   const { data } = useSettings();
   useEffect(() => {
-    // Vignette ad script requested by owner (zone 11987279)
-    if (!document.querySelector('script[data-zone="11987279"]')) {
-      try {
-        (function (s: HTMLScriptElement) {
-          s.dataset.zone = "11987279";
-          s.src = "https://n6wxm.com/vignette.min.js";
-        })(
-          [document.documentElement, document.body]
-            .filter(Boolean)
-            .pop()!
-            .appendChild(document.createElement("script")),
-        );
-      } catch {
-        // ignore ad-blocker errors
-      }
-    }
+    // Supprimer uniquement l'ancien script Monetag All-in-One (quge5.com / zone 228397)
+    document
+      .querySelectorAll('script[src*="quge5.com"], script[data-zone="228397"]')
+      .forEach((el) => el.remove());
 
     if (!data) return;
+
+    // Mise à jour éventuelle du jeton <meta name="monetag">
+    const monetagToken = data["monetag_meta"]?.trim() || "59029dc25ef25e3de878e23f259217d6";
+    let metaEl = document.querySelector('meta[name="monetag"]') as HTMLMetaElement | null;
+    if (!metaEl) {
+      metaEl = document.createElement("meta");
+      metaEl.name = "monetag";
+      document.head.appendChild(metaEl);
+    }
+    metaEl.content = monetagToken;
+
+    // Zone Monetag Vignette Banner (par défaut 11987279 sur n6wxm.com/vignette.min.js)
+    const vignetteZone = data["monetag_vignette_zone"]?.trim() || "11987279";
+    if (vignetteZone && !document.querySelector(`script[data-zone="${vignetteZone}"]`)) {
+      (function (s: HTMLScriptElement) {
+        s.dataset.zone = vignetteZone;
+        s.src = "https://n6wxm.com/vignette.min.js";
+      })(
+        [document.documentElement, document.body]
+          .filter(Boolean)
+          .pop()!
+          .appendChild(document.createElement("script")),
+      );
+    }
+
+    // Script Monetag In-Page Push (In-Push) ou Bannière collé dans l'Admin
+    const inpageScript = data["monetag_inpage_script"]?.trim();
+    if (inpageScript) {
+      injectHtmlSnippetIntoHead(inpageScript, "monetag-inpage-script");
+    }
+
     const client = data["adsense_client"]?.trim();
     if (client && !document.getElementById("adsense-loader")) {
       const sc = document.createElement("script");
@@ -211,22 +254,10 @@ function useInjectedScripts() {
       sc.src = `https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=${encodeURIComponent(client)}`;
       document.head.appendChild(sc);
     }
+
     const html = data["head_script"]?.trim();
-    if (html && !document.getElementById("custom-head-script")) {
-      const holder = document.createElement("div");
-      holder.id = "custom-head-script";
-      holder.style.display = "none";
-      const tpl = document.createElement("template");
-      tpl.innerHTML = html;
-      tpl.content.childNodes.forEach((n) => {
-        if (n instanceof HTMLScriptElement) {
-          const sc = document.createElement("script");
-          Array.from(n.attributes).forEach((a) => sc.setAttribute(a.name, a.value));
-          sc.text = n.text;
-          document.head.appendChild(sc);
-        } else holder.appendChild(n.cloneNode(true));
-      });
-      document.body.appendChild(holder);
+    if (html) {
+      injectHtmlSnippetIntoHead(html, "custom-head-script");
     }
   }, [data]);
 }
@@ -239,7 +270,12 @@ function Footer() {
   return (
     <footer className="mt-10 flex flex-wrap justify-center gap-x-4 gap-y-1 px-4 text-xs text-muted-foreground">
       {extra.map((p) => (
-        <Link key={p.slug} to="/p/$slug" params={{ slug: p.slug }} className="hover:text-foreground">
+        <Link
+          key={p.slug}
+          to="/p/$slug"
+          params={{ slug: p.slug }}
+          className="hover:text-foreground"
+        >
           {p.title}
         </Link>
       ))}

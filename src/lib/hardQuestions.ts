@@ -38,7 +38,8 @@ export const HARD_QUESTIONS: QuizQuestion[] = [
   {
     id: "hq-mus-3",
     category: "musique",
-    question: "Quel album de Michael Jackson détient le record mondial des ventes avec plus de 65 millions d'exemplaires ?",
+    question:
+      "Quel album de Michael Jackson détient le record mondial des ventes avec plus de 65 millions d'exemplaires ?",
     options: ["Bad", "Thriller", "Off the Wall", "Dangerous"],
     correct_index: 1,
     lang: "fr",
@@ -48,7 +49,8 @@ export const HARD_QUESTIONS: QuizQuestion[] = [
   {
     id: "hq-mus-4",
     category: "musique",
-    question: "Ki mizisyen ayisyen ki te fè pati gwoup The Fugees avèk Lauryn Hill ak Pras Michel ?",
+    question:
+      "Ki mizisyen ayisyen ki te fè pati gwoup The Fugees avèk Lauryn Hill ak Pras Michel ?",
     options: ["Wyclef Jean", "Belo", "BIC Tizon Dife", "Mikaben"],
     correct_index: 0,
     lang: "ht",
@@ -58,8 +60,14 @@ export const HARD_QUESTIONS: QuizQuestion[] = [
   {
     id: "hq-mus-5",
     category: "musique",
-    question: "Quel compositeur classique était complètement sourd lorsqu'il a composé sa 9e Symphonie ?",
-    options: ["Wolfgang Amadeus Mozart", "Ludwig van Beethoven", "Jean-Sébastien Bach", "Frédéric Chopin"],
+    question:
+      "Quel compositeur classique était complètement sourd lorsqu'il a composé sa 9e Symphonie ?",
+    options: [
+      "Wolfgang Amadeus Mozart",
+      "Ludwig van Beethoven",
+      "Jean-Sébastien Bach",
+      "Frédéric Chopin",
+    ],
     correct_index: 1,
     lang: "fr",
     image_url: null,
@@ -78,7 +86,8 @@ export const HARD_QUESTIONS: QuizQuestion[] = [
   {
     id: "hq-mus-7",
     category: "musique",
-    question: "Quel rappeur américain a remporté le prix Pulitzer de la musique en 2018 pour son album 'DAMN.' ?",
+    question:
+      "Quel rappeur américain a remporté le prix Pulitzer de la musique en 2018 pour son album 'DAMN.' ?",
     options: ["J. Cole", "Kendrick Lamar", "Jay-Z", "Nas"],
     correct_index: 1,
     lang: "fr",
@@ -88,7 +97,8 @@ export const HARD_QUESTIONS: QuizQuestion[] = [
   {
     id: "hq-mus-8",
     category: "musique",
-    question: "Combien de touches (noires et blanches confondues) possède un piano standard moderne ?",
+    question:
+      "Combien de touches (noires et blanches confondues) possède un piano standard moderne ?",
     options: ["76 touches", "84 touches", "88 touches", "92 touches"],
     correct_index: 2,
     lang: "fr",
@@ -98,7 +108,8 @@ export const HARD_QUESTIONS: QuizQuestion[] = [
   {
     id: "hq-mus-9",
     category: "musique",
-    question: "Quel artiste nigérian a popularisé le genre 'Afro-fusion' et remporté le Grammy du meilleur album mondial avec 'Twice as Tall' ?",
+    question:
+      "Quel artiste nigérian a popularisé le genre 'Afro-fusion' et remporté le Grammy du meilleur album mondial avec 'Twice as Tall' ?",
     options: ["Burna Boy", "Wizkid", "Davido", "CKay"],
     correct_index: 0,
     lang: "fr",
@@ -108,7 +119,8 @@ export const HARD_QUESTIONS: QuizQuestion[] = [
   {
     id: "hq-mus-10",
     category: "musique",
-    question: "En théorie musicale, combien de demi-tons séparent une quinte juste dans la gamme tempérée ?",
+    question:
+      "En théorie musicale, combien de demi-tons séparent une quinte juste dans la gamme tempérée ?",
     options: ["5 demi-tons", "6 demi-tons", "7 demi-tons", "8 demi-tons"],
     correct_index: 2,
     lang: "fr",
@@ -120,7 +132,8 @@ export const HARD_QUESTIONS: QuizQuestion[] = [
   {
     id: "hq-geo-1",
     category: "geographie",
-    question: "Quelle est l'altitude exacte approximative du Pic la Selle, point culminant d'Haïti ?",
+    question:
+      "Quelle est l'altitude exacte approximative du Pic la Selle, point culminant d'Haïti ?",
     options: ["2 680 m", "1 950 m", "3 098 m", "2 347 m"],
     correct_index: 0,
     lang: "fr",
@@ -170,7 +183,8 @@ export const HARD_QUESTIONS: QuizQuestion[] = [
   {
     id: "hq-geo-6",
     category: "geographie",
-    question: "Quel pays africain possède le plus grand nombre de pyramides anciennes (plus que l'Égypte) ?",
+    question:
+      "Quel pays africain possède le plus grand nombre de pyramides anciennes (plus que l'Égypte) ?",
     options: ["Éthiopie", "Soudan", "Libye", "Mali"],
     correct_index: 1,
     lang: "fr",
@@ -190,7 +204,8 @@ export const HARD_QUESTIONS: QuizQuestion[] = [
   {
     id: "hq-geo-8",
     category: "geographie",
-    question: "Quel est le seul pays d'Amérique du Sud dont la langue officielle est le néerlandais ?",
+    question:
+      "Quel est le seul pays d'Amérique du Sud dont la langue officielle est le néerlandais ?",
     options: ["Guyana", "Suriname", "Belize", "Paraguay"],
     correct_index: 1,
     lang: "fr",
@@ -200,7 +215,8 @@ export const HARD_QUESTIONS: QuizQuestion[] = [
   {
     id: "hq-geo-9",
     category: "geographie",
-    question: "Dans quelle chaîne de montagnes se situe le volcan K2, deuxième plus haut sommet du monde ?",
+    question:
+      "Dans quelle chaîne de montagnes se situe le volcan K2, deuxième plus haut sommet du monde ?",
     options: ["Karakoram", "Cordillère des Andes", "Hindou Kouch", "Caucase"],
     correct_index: 0,
     lang: "fr",
@@ -222,7 +238,8 @@ export const HARD_QUESTIONS: QuizQuestion[] = [
   {
     id: "hq-cul-1",
     category: "culture",
-    question: "Dans quelle ville haïtienne l'Acte de l'Indépendance a-t-il été signé le 1er janvier 1804 ?",
+    question:
+      "Dans quelle ville haïtienne l'Acte de l'Indépendance a-t-il été signé le 1er janvier 1804 ?",
     options: ["Cap-Haïtien", "Gonaïves", "Vertières", "Saint-Marc"],
     correct_index: 1,
     lang: "fr",
@@ -232,7 +249,8 @@ export const HARD_QUESTIONS: QuizQuestion[] = [
   {
     id: "hq-cul-2",
     category: "culture",
-    question: "Qui a rédigé l'Acte de l'Indépendance d'Haïti en tant que secrétaire de Jean-Jacques Dessalines ?",
+    question:
+      "Qui a rédigé l'Acte de l'Indépendance d'Haïti en tant que secrétaire de Jean-Jacques Dessalines ?",
     options: ["Louis Boisrond-Tonnerre", "Alexandre Pétion", "Henri Christophe", "Capois-la-Mort"],
     correct_index: 0,
     lang: "fr",
@@ -252,7 +270,8 @@ export const HARD_QUESTIONS: QuizQuestion[] = [
   {
     id: "hq-cul-4",
     category: "culture",
-    question: "Quel écrivain haïtien-canadien a été élu à l'Académie française au fauteuil n°2 en 2013 ?",
+    question:
+      "Quel écrivain haïtien-canadien a été élu à l'Académie française au fauteuil n°2 en 2013 ?",
     options: ["Dany Laferrière", "René Depestre", "Jean Price-Mars", "Lyonel Trouillot"],
     correct_index: 0,
     lang: "fr",
@@ -292,7 +311,8 @@ export const HARD_QUESTIONS: QuizQuestion[] = [
   {
     id: "hq-cul-8",
     category: "culture",
-    question: "En quelle année le roi Henri Christophe a-t-il achevé la construction principale de la Citadelle Laferrière ?",
+    question:
+      "En quelle année le roi Henri Christophe a-t-il achevé la construction principale de la Citadelle Laferrière ?",
     options: ["1820", "1804", "1844", "1799"],
     correct_index: 0,
     lang: "fr",
@@ -302,7 +322,8 @@ export const HARD_QUESTIONS: QuizQuestion[] = [
   {
     id: "hq-cul-9",
     category: "culture",
-    question: "Quel traité signé en 1697 a officialisé le partage de l'île d'Hispaniola entre la France et l'Espagne ?",
+    question:
+      "Quel traité signé en 1697 a officialisé le partage de l'île d'Hispaniola entre la France et l'Espagne ?",
     options: ["Traité de Ryswick", "Traité de Bâle", "Traité d'Aranjuez", "Traité de Versailles"],
     correct_index: 0,
     lang: "fr",
@@ -354,7 +375,8 @@ export const HARD_QUESTIONS: QuizQuestion[] = [
   {
     id: "hq-cin-4",
     category: "cinema",
-    question: "Quel film détient le record historique du plus gros box-office mondial (hors inflation) ?",
+    question:
+      "Quel film détient le record historique du plus gros box-office mondial (hors inflation) ?",
     options: ["Avengers: Endgame", "Avatar (2009)", "Titanic", "Star Wars VII"],
     correct_index: 1,
     lang: "fr",
@@ -364,7 +386,8 @@ export const HARD_QUESTIONS: QuizQuestion[] = [
   {
     id: "hq-cin-5",
     category: "cinema",
-    question: "Quel cinéaste haïtien a réalisé le documentaire 'Lumumba, la mort du prophète' et 'I Am Not Your Negro' ?",
+    question:
+      "Quel cinéaste haïtien a réalisé le documentaire 'Lumumba, la mort du prophète' et 'I Am Not Your Negro' ?",
     options: ["Raoul Peck", "Arnold Antonin", "Richard Sénécal", "rassoul Labuchin"],
     correct_index: 0,
     lang: "fr",
@@ -374,7 +397,8 @@ export const HARD_QUESTIONS: QuizQuestion[] = [
   {
     id: "hq-cin-6",
     category: "cinema",
-    question: "Dans la série 'Breaking Bad', quel est le pseudonyme utilisé par Walter White dans le milieu criminel ?",
+    question:
+      "Dans la série 'Breaking Bad', quel est le pseudonyme utilisé par Walter White dans le milieu criminel ?",
     options: ["Heisenberg", "Schrödinger", "Oppenheimer", "Fring"],
     correct_index: 0,
     lang: "fr",
@@ -384,7 +408,8 @@ export const HARD_QUESTIONS: QuizQuestion[] = [
   {
     id: "hq-cin-7",
     category: "cinema",
-    question: "Quels sont les trois seuls films de l'histoire à avoir remporté 11 Oscars lors d'une même cérémonie ?",
+    question:
+      "Quels sont les trois seuls films de l'histoire à avoir remporté 11 Oscars lors d'une même cérémonie ?",
     options: [
       "Ben-Hur, Titanic, Le Seigneur des Anneaux : Le Retour du Roi",
       "Le Parrain, Titanic, Avatar",
@@ -399,7 +424,8 @@ export const HARD_QUESTIONS: QuizQuestion[] = [
   {
     id: "hq-cin-8",
     category: "cinema",
-    question: "Dans 'Matrix' (1999), quelle pilule Neo choisit-il d'avaler pour découvrir la vérité ?",
+    question:
+      "Dans 'Matrix' (1999), quelle pilule Neo choisit-il d'avaler pour découvrir la vérité ?",
     options: ["La pilule rouge", "La pilule bleue", "La pilule verte", "La pilule dorée"],
     correct_index: 0,
     lang: "fr",
@@ -431,7 +457,8 @@ export const HARD_QUESTIONS: QuizQuestion[] = [
   {
     id: "hq-tech-3",
     category: "informatique",
-    question: "En algorithmique, quelle est la complexité temporelle moyenne d'une recherche dichotomique (Binary Search) ?",
+    question:
+      "En algorithmique, quelle est la complexité temporelle moyenne d'une recherche dichotomique (Binary Search) ?",
     options: ["O(1)", "O(log n)", "O(n)", "O(n log n)"],
     correct_index: 1,
     lang: "fr",
@@ -451,7 +478,8 @@ export const HARD_QUESTIONS: QuizQuestion[] = [
   {
     id: "hq-tech-5",
     category: "informatique",
-    question: "En SQL, quelle clause permet de filtrer les résultats APRÈS un regroupement GROUP BY ?",
+    question:
+      "En SQL, quelle clause permet de filtrer les résultats APRÈS un regroupement GROUP BY ?",
     options: ["WHERE", "HAVING", "ORDER BY", "DISTINCT"],
     correct_index: 1,
     lang: "fr",
@@ -471,7 +499,8 @@ export const HARD_QUESTIONS: QuizQuestion[] = [
   {
     id: "hq-tech-7",
     category: "informatique",
-    question: "Quel article scientifique publié en 2017 par des chercheurs de Google a introduit l'architecture Transformer en IA ?",
+    question:
+      "Quel article scientifique publié en 2017 par des chercheurs de Google a introduit l'architecture Transformer en IA ?",
     options: [
       "Attention Is All You Need",
       "Deep Residual Learning",
@@ -486,7 +515,8 @@ export const HARD_QUESTIONS: QuizQuestion[] = [
   {
     id: "hq-tech-8",
     category: "informatique",
-    question: "Dans le modèle OSI des réseaux informatiques, combien de couches existe-t-il au total ?",
+    question:
+      "Dans le modèle OSI des réseaux informatiques, combien de couches existe-t-il au total ?",
     options: ["4 couches", "5 couches", "7 couches", "8 couches"],
     correct_index: 2,
     lang: "fr",
@@ -499,18 +529,29 @@ export const HARD_QUESTIONS: QuizQuestion[] = [
  * Fusionne les questions de la base Supabase avec la banque de questions corsées intégrée,
  * en évitant les doublons de texte et en filtrant par catégorie.
  */
-export function mergeWithHardQuestions(dbQuestions: QuizQuestion[], category: string): QuizQuestion[] {
+export function mergeWithHardQuestions(
+  dbQuestions: QuizQuestion[],
+  category: string,
+): QuizQuestion[] {
   const seen = new Set(dbQuestions.map((q) => q.question.trim().toLowerCase()));
   const extra = HARD_QUESTIONS.filter(
-    (q) => (category === "mix" || q.category === category) && !seen.has(q.question.trim().toLowerCase()),
+    (q) =>
+      (category === "mix" || q.category === category) && !seen.has(q.question.trim().toLowerCase()),
   );
   return [...dbQuestions, ...extra];
 }
 
 export function difficultyBadge(d: number): { label: string; cls: string } {
-  if (d >= 5) return { label: "💀 BOSS", cls: "bg-destructive/20 text-destructive border border-destructive/40" };
-  if (d === 4) return { label: "⚡ Expert", cls: "bg-secondary/20 text-secondary border border-secondary/40" };
-  if (d === 3) return { label: "🔥 Difficile", cls: "bg-accent/20 text-accent border border-accent/40" };
-  if (d === 2) return { label: "🎯 Moyen", cls: "bg-primary/20 text-primary border border-primary/40" };
+  if (d >= 5)
+    return {
+      label: "💀 BOSS",
+      cls: "bg-destructive/20 text-destructive border border-destructive/40",
+    };
+  if (d === 4)
+    return { label: "⚡ Expert", cls: "bg-secondary/20 text-secondary border border-secondary/40" };
+  if (d === 3)
+    return { label: "🔥 Difficile", cls: "bg-accent/20 text-accent border border-accent/40" };
+  if (d === 2)
+    return { label: "🎯 Moyen", cls: "bg-primary/20 text-primary border border-primary/40" };
   return { label: "✓ Standard", cls: "bg-muted text-muted-foreground" };
 }

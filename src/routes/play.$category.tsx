@@ -1,16 +1,34 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
-import { Coins, Share2, RotateCcw, Timer, Heart, Shield, Zap, Sparkles, Flame, Skull } from "lucide-react";
+import {
+  Share2,
+  RotateCcw,
+  Timer,
+  Heart,
+  Shield,
+  Zap,
+  Sparkles,
+  Flame,
+  Skull,
+  Swords,
+  Trophy,
+  BookOpen,
+} from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { CATEGORIES, shareWhatsApp } from "@/lib/categories";
-import { addCoins, COINS_PER_CORRECT, getPlayer, levelFromXp, usePlayer } from "@/lib/player";
+import { addQuizPoints, getPlayer, levelFromXp } from "@/lib/player";
 import { sfx, useQuizBgm } from "@/lib/sound";
 import { MuteButton } from "@/components/MuteButton";
 import { AdSlot, LocalBanner } from "@/components/Ads";
 import { Button } from "@/components/ui/button";
-import { difficultyBadge, mergeWithHardQuestions, type QuizQuestion } from "@/lib/hardQuestions";
+import { difficultyBadge, type QuizQuestion } from "@/lib/hardQuestions";
+import {
+  markQuestionsSeen,
+  selectCatalogQuestions,
+  TOTAL_CATALOG_COUNT,
+} from "@/lib/infiniteQuizCatalog";
 
 export const Route = createFileRoute("/play/$category")({
   head: ({ params }) => {
@@ -19,7 +37,7 @@ export const Route = createFileRoute("/play/$category")({
     return {
       meta: [
         { title: t },
-        { name: "description", content: `Joue au quiz ${c?.label ?? ""} et gagne des GDS.` },
+        { name: "description", content: `Joue au quiz ${c?.label ?? ""} parmi +12 000 questions.` },
         { property: "og:title", content: t },
         { property: "og:description", content: `Relève le défi ${c?.label ?? ""} sur QuizBoss !` },
       ],
@@ -40,7 +58,7 @@ const QUIZ_MODES: Record<
     baseTime: number;
     minTime: number;
     lives: number;
-    coinsPerCorrect: number;
+    ptsPerCorrect: number;
     xpMultiplier: number;
     minDifficulty: number;
   }
@@ -48,37 +66,37 @@ const QUIZ_MODES: Record<
   normal: {
     id: "normal",
     label: "Classique ⚡",
-    sub: "10 questions progressives · 4 vies · +3 GDS/réponse",
+    sub: "10 questions progressives · 4 vies · +15 Pts & XP / rép.",
     rounds: 10,
     baseTime: 18,
     minTime: 7,
     lives: 4,
-    coinsPerCorrect: COINS_PER_CORRECT,
+    ptsPerCorrect: 15,
     xpMultiplier: 1,
     minDifficulty: 1,
   },
   hard: {
     id: "hard",
     label: "Difficile 🔥",
-    sub: "12 questions corsées · Chrono 13s · 3 vies · +5 GDS/réponse",
+    sub: "12 questions corsées · Chrono 13s · 3 vies · +30 Pts & XP x1.5",
     rounds: 12,
     baseTime: 13,
     minTime: 6,
     lives: 3,
-    coinsPerCorrect: 5,
+    ptsPerCorrect: 30,
     xpMultiplier: 1.5,
     minDifficulty: 2,
   },
   boss: {
     id: "boss",
     label: "Mode BOSS 💀",
-    sub: "15 questions Expert · Chrono 10s · 2 vies · +8 GDS/réponse",
+    sub: "15 questions Expert · Chrono 10s · 2 vies · +50 Pts & XP x2.5",
     rounds: 15,
     baseTime: 10,
     minTime: 5,
     lives: 2,
-    coinsPerCorrect: 8,
-    xpMultiplier: 2.2,
+    ptsPerCorrect: 50,
+    xpMultiplier: 2.5,
     minDifficulty: 3,
   },
 };
@@ -108,14 +126,14 @@ function Play() {
         .select("id,category,question,options,correct_index,lang,image_url,difficulty");
       if (category !== "mix") q = q.eq("category", category);
       const { data: rows } = await q;
-      const merged = mergeWithHardQuestions((rows ?? []) as QuizQuestion[], category);
       const cfg = QUIZ_MODES[mode];
+      const pool = selectCatalogQuestions(
+        (rows ?? []) as QuizQuestion[],
+        category,
+        cfg.minDifficulty,
+      );
 
-      // Prioritise higher difficulty questions for Hard and Boss modes
-      const filtered = merged.filter((x) => (x.difficulty ?? 1) >= cfg.minDifficulty);
-      const pool = filtered.length >= cfg.rounds ? filtered : merged;
-
-      return shuffle(pool)
+      const selected = shuffle(pool)
         .slice(0, cfg.rounds)
         .sort((a, b) => (a.difficulty ?? 1) - (b.difficulty ?? 1))
         .map((x) => {
@@ -126,26 +144,41 @@ function Play() {
             correct_index: order.indexOf(x.correct_index),
           };
         });
+
+      markQuestionsSeen(selected.map((s) => s.id));
+      return selected;
     },
   });
 
   if (isLoading || !data) {
-    return <div className="py-20 text-center text-muted-foreground">Chargement du défi…</div>;
+    return (
+      <div className="py-20 text-center text-muted-foreground">
+        Chargement du catalogue de quiz…
+      </div>
+    );
   }
   if (data.length === 0) {
-    return <div className="py-20 text-center">Aucune question dans cette catégorie pour l'instant.</div>;
+    return (
+      <div className="py-20 text-center">Aucune question dans cette catégorie pour l'instant.</div>
+    );
   }
 
   if (!started) {
     const cfg = QUIZ_MODES[mode];
     return (
       <div className="space-y-5 py-3 animate-pop">
-        <div className={`${cat.grad} relative overflow-hidden rounded-3xl p-6 text-secondary-foreground shadow-xl`}>
+        <div
+          className={`${cat.grad} relative overflow-hidden rounded-3xl p-6 text-secondary-foreground shadow-xl`}
+        >
           <span className="absolute right-4 top-3 text-6xl opacity-90">{cat.emoji}</span>
-          <p className="text-xs font-extrabold uppercase tracking-widest opacity-80">Prêt pour le défi ?</p>
-          <h1 className="mt-1 text-3xl font-extrabold">{cat.label}</h1>
-          <p className="mt-2 text-sm font-semibold opacity-95">
-            Choisis ton niveau d'intensité : plus le mode est dur, plus tu gagnes de GDS et d'XP !
+          <span className="inline-flex items-center gap-1 rounded-full bg-background/25 px-3 py-0.5 text-[11px] font-extrabold uppercase tracking-wider">
+            <BookOpen className="h-3.5 w-3.5" /> Catalogue +
+            {TOTAL_CATALOG_COUNT.toLocaleString("fr-FR")} Quiz
+          </span>
+          <h1 className="mt-2 text-3xl font-extrabold">{cat.label}</h1>
+          <p className="mt-1 text-xs font-semibold opacity-95">
+            Entraîne-toi et gagne des Points de classement & de l'XP. Pour gagner des GDS
+            échangeables, affronte d'autres joueurs en <b>Mode Duel</b> !
           </p>
         </div>
 
@@ -182,8 +215,8 @@ function Play() {
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
                     <span className="font-extrabold">{m.label}</span>
-                    <span className="rounded-full bg-accent/20 px-2 py-0.5 text-[11px] font-bold text-accent">
-                      +{m.coinsPerCorrect} GDS / rép.
+                    <span className="rounded-full bg-primary/20 px-2 py-0.5 text-[11px] font-bold text-primary">
+                      +{m.ptsPerCorrect} Pts / rép.
                     </span>
                   </div>
                   <p className="mt-0.5 text-xs text-muted-foreground">{m.sub}</p>
@@ -194,10 +227,16 @@ function Play() {
         </div>
 
         <div className="rounded-2xl bg-card p-4 text-xs text-muted-foreground space-y-1">
-          <p className="font-bold text-foreground">🛠️ Jokers tactiques disponibles en partie :</p>
-          <p>• 🎯 <b>50/50</b> : Élimine 2 mauvaises réponses instantanément</p>
-          <p>• ⏱️ <b>+6s Chrono</b> : Ajoute 6 secondes au compte à rebours</p>
-          <p>• 🛡️ <b>Bouclier</b> : Protège ta vie ❤️ et ton combo 🔥 en cas d'erreur</p>
+          <p className="font-bold text-foreground">🛠️ 3 Jokers tactiques inclus par partie :</p>
+          <p>
+            • 🎯 <b>50/50</b> : Élimine 2 mauvaises réponses instantanément
+          </p>
+          <p>
+            • ⏱️ <b>+6s Chrono</b> : Ajoute 6 secondes au compte à rebours
+          </p>
+          <p>
+            • 🛡️ <b>Bouclier</b> : Protège ta vie ❤️ et ton combo 🔥 en cas d'erreur
+          </p>
         </div>
 
         <Button
@@ -242,7 +281,6 @@ function Game({
   onReplay: () => void;
   onChangeMode: () => void;
 }) {
-  const player = usePlayer();
   const [idx, setIdx] = useState(0);
   const [picked, setPicked] = useState<number | null>(null);
   const [streak, setStreak] = useState(0);
@@ -252,11 +290,11 @@ function Game({
   const [time, setTime] = useState(modeConfig.baseTime);
   const [score, setScore] = useState(0);
   const [correct, setCorrect] = useState(0);
-  const [gain, setGain] = useState<{ coins: number; xp: number }>({ coins: 0, xp: 0 });
+  const [gain, setGain] = useState<{ pts: number; xp: number }>({ pts: 0, xp: 0 });
   const [floater, setFloater] = useState<string | null>(null);
   const [done, setDone] = useState(false);
 
-  // Jokers state
+  // Jokers (1 de chaque par partie)
   const [hiddenOptions, setHiddenOptions] = useState<number[]>([]);
   const [shieldActive, setShieldActive] = useState(false);
   const [used5050, setUsed5050] = useState(false);
@@ -287,36 +325,22 @@ function Game({
   });
 
   function useJoker5050() {
-    if (picked !== null || hiddenOptions.length > 0) return;
-    if (used5050 && player.coins < 5) {
-      return void toast.error("Il faut 5 GDS pour réutiliser le joker 50/50");
-    }
-    if (used5050) addCoins(-5, "Joker 50/50 en quiz", "spend");
+    if (picked !== null || hiddenOptions.length > 0 || used5050) return;
     sfx.powerup();
     setUsed5050(true);
-    const wrongIndices = q.options
-      .map((_, i) => i)
-      .filter((i) => i !== q.correct_index);
+    const wrongIndices = q.options.map((_, i) => i).filter((i) => i !== q.correct_index);
     setHiddenOptions(shuffle(wrongIndices).slice(0, 2));
   }
 
   function useJokerTime() {
-    if (picked !== null) return;
-    if (usedTime && player.coins < 5) {
-      return void toast.error("Il faut 5 GDS pour réutiliser +6s Chrono");
-    }
-    if (usedTime) addCoins(-5, "Joker +6s Chrono", "spend");
+    if (picked !== null || usedTime) return;
     sfx.powerup();
     setUsedTime(true);
     setTime((t) => Math.min(limit + 6, t + 6));
   }
 
   function useJokerShield() {
-    if (picked !== null || shieldActive) return;
-    if (usedShield && player.coins < 8) {
-      return void toast.error("Il faut 8 GDS pour réutiliser le Bouclier");
-    }
-    if (usedShield) addCoins(-8, "Joker Bouclier", "spend");
+    if (picked !== null || shieldActive || usedShield) return;
     sfx.powerup();
     setUsedShield(true);
     setShieldActive(true);
@@ -338,15 +362,15 @@ function Game({
       }
       const comboMult = nextStreak >= 5 ? 2 : nextStreak >= 3 ? 1.5 : 1;
       const pts = Math.round((60 + time * 4 + (q.difficulty - 1) * 20) * comboMult);
-      const speedBonus = time >= limit * 0.6 ? 2 : time >= limit * 0.35 ? 1 : 0;
-      const comboCoinBonus = nextStreak >= 4 ? 2 : nextStreak >= 2 ? 1 : 0;
-      const coins = modeConfig.coinsPerCorrect + speedBonus + comboCoinBonus;
-      const xpGain = Math.round((10 + Math.floor(time / 2) + q.difficulty * 3) * modeConfig.xpMultiplier);
+      const bonusPts = modeConfig.ptsPerCorrect + (time >= limit * 0.5 ? 10 : 0);
+      const xpGain = Math.round(
+        (12 + Math.floor(time / 2) + q.difficulty * 4) * modeConfig.xpMultiplier,
+      );
 
       setScore((s) => s + pts);
       setCorrect((c) => c + 1);
-      setGain((g) => ({ coins: g.coins + coins, xp: g.xp + xpGain }));
-      setFloater(`+${coins} GDS ${comboMult > 1 ? `🔥x${comboMult}` : "🪙"}`);
+      setGain((g) => ({ pts: g.pts + bonusPts, xp: g.xp + xpGain }));
+      setFloater(`+${pts} PTS ${comboMult > 1 ? `🔥x${comboMult}` : "⚡"}`);
       setShieldActive(false);
 
       setTimeout(() => {
@@ -401,18 +425,11 @@ function Game({
     if (survived) sfx.win();
     else sfx.lose();
 
-    const perfectBonus = correct === questions.length ? 15 : 0;
-    const totalCoins = gain.coins + perfectBonus;
-
-    addCoins(
-      totalCoins,
-      `Quiz ${modeConfig.label} · ${cat.label} (${correct}/${questions.length})`,
-      "solo",
-      (p) => ({
-        xp: p.xp + gain.xp,
-        gamesPlayed: p.gamesPlayed + 1,
-        bestScore: Math.max(p.bestScore, score),
-      }),
+    addQuizPoints(
+      gain.pts,
+      gain.xp,
+      score,
+      `Quiz Solo ${modeConfig.label} · ${cat.label} (${correct}/${questions.length})`,
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [done]);
@@ -421,12 +438,13 @@ function Game({
     const p = getPlayer();
     const lvl = levelFromXp(p.xp);
     const ko = lives <= 0;
-    const perfectBonus = correct === questions.length ? 15 : 0;
     const link = `${window.location.origin}/?ref=${p.id}`;
     const text = `🔥 J'ai fait ${score} pts (${correct}/${questions.length}) en mode ${modeConfig.label} (${cat.label}) sur QuizBoss ! Niveau ${lvl} 🏆\nTu peux me battre ? 👉 ${link}`;
     return (
       <div className="space-y-5 py-4 animate-pop">
-        <div className={`${cat.grad} rounded-3xl p-6 text-center text-secondary-foreground shadow-xl`}>
+        <div
+          className={`${cat.grad} rounded-3xl p-6 text-center text-secondary-foreground shadow-xl`}
+        >
           <p className="text-6xl">{ko ? "💀" : correct >= questions.length * 0.75 ? "🏆" : "🎉"}</p>
           <p className="mt-1 text-xs font-extrabold uppercase tracking-widest opacity-85">
             {ko ? "Plus de vies — K.O. !" : modeConfig.label}
@@ -436,23 +454,28 @@ function Game({
             {correct} / {questions.length} bonnes réponses · Série max : 🔥 x{bestStreak}
           </p>
           <div className="mt-4 flex flex-wrap justify-center gap-2 text-sm font-bold">
-            <span className="rounded-full bg-background/25 px-3 py-1">
-              +{gain.coins + perfectBonus} GDS
-            </span>
+            <span className="rounded-full bg-background/25 px-3 py-1">+{gain.pts} Points Quiz</span>
             <span className="rounded-full bg-background/25 px-3 py-1">+{gain.xp} XP</span>
-            {perfectBonus > 0 && (
-              <span className="rounded-full bg-accent px-3 py-1 text-accent-foreground">
-                Sans-faute +{perfectBonus} GDS !
-              </span>
-            )}
           </div>
           {lvl > startLevel.current && (
             <p className="mt-3 text-lg font-extrabold">⬆️ Niveau {lvl} atteint !</p>
           )}
-          {lvl === startLevel.current && (
-            <p className="mt-3 text-sm opacity-90">Niveau actuel : {lvl}</p>
-          )}
+          <p className="mt-3 text-xs opacity-90">
+            💡 Les points de quiz solo servent à monter de niveau. Pour gagner des GDS échangeables,
+            joue en <b>Mode Duel avec mise</b> !
+          </p>
         </div>
+
+        <Button
+          size="lg"
+          asChild
+          className="w-full bg-grad-candy text-secondary-foreground font-extrabold shadow-lg"
+        >
+          <Link to="/duel">
+            <Swords className="h-5 w-5" /> Passer en Duel Multijoueur (Gagner des GDS)
+          </Link>
+        </Button>
+
         <div className="grid grid-cols-2 gap-3">
           <Button
             size="lg"
@@ -536,7 +559,9 @@ function Game({
       </div>
 
       <div className="flex items-center gap-3">
-        <Timer className={`h-5 w-5 ${time <= 5 ? "text-destructive animate-bounce" : "text-primary"}`} />
+        <Timer
+          className={`h-5 w-5 ${time <= 5 ? "text-destructive animate-bounce" : "text-primary"}`}
+        />
         <div className="h-2.5 flex-1 overflow-hidden rounded-full bg-muted">
           <div
             className={`h-full transition-all duration-1000 ease-linear ${
@@ -545,11 +570,13 @@ function Game({
             style={{ width: `${pct}%` }}
           />
         </div>
-        <span className={`w-7 text-right font-extrabold tabular-nums ${time <= 5 ? "text-destructive" : ""}`}>
+        <span
+          className={`w-7 text-right font-extrabold tabular-nums ${time <= 5 ? "text-destructive" : ""}`}
+        >
           {time}s
         </span>
         <span className="flex items-center gap-1 font-bold text-accent">
-          <Coins className="h-4 w-4" />
+          <Trophy className="h-4 w-4" />
           {score}
         </span>
       </div>
@@ -558,43 +585,32 @@ function Game({
       <div className="grid grid-cols-3 gap-2">
         <button
           type="button"
-          disabled={picked !== null || hiddenOptions.length > 0}
+          disabled={picked !== null || hiddenOptions.length > 0 || used5050}
           onClick={useJoker5050}
           className="flex items-center justify-center gap-1.5 rounded-xl border border-border bg-card/80 px-2 py-1.5 text-xs font-bold transition-transform active:scale-95 disabled:opacity-40"
         >
           <Sparkles className="h-3.5 w-3.5 text-accent" />
-          50/50{" "}
-          <span className="text-[10px] text-muted-foreground">
-            {used5050 ? "(5 GDS)" : "(Gratuit)"}
-          </span>
+          50/50
         </button>
         <button
           type="button"
-          disabled={picked !== null}
+          disabled={picked !== null || usedTime}
           onClick={useJokerTime}
           className="flex items-center justify-center gap-1.5 rounded-xl border border-border bg-card/80 px-2 py-1.5 text-xs font-bold transition-transform active:scale-95 disabled:opacity-40"
         >
           <Timer className="h-3.5 w-3.5 text-primary" />
-          +6s{" "}
-          <span className="text-[10px] text-muted-foreground">
-            {usedTime ? "(5 GDS)" : "(Gratuit)"}
-          </span>
+          +6s Chrono
         </button>
         <button
           type="button"
-          disabled={picked !== null || shieldActive}
+          disabled={picked !== null || shieldActive || usedShield}
           onClick={useJokerShield}
           className={`flex items-center justify-center gap-1.5 rounded-xl border px-2 py-1.5 text-xs font-bold transition-transform active:scale-95 disabled:opacity-40 ${
-            shieldActive
-              ? "border-primary bg-primary/20 text-primary"
-              : "border-border bg-card/80"
+            shieldActive ? "border-primary bg-primary/20 text-primary" : "border-border bg-card/80"
           }`}
         >
           <Shield className="h-3.5 w-3.5 text-success" />
-          Bouclier{" "}
-          <span className="text-[10px] text-muted-foreground">
-            {shieldActive ? "Actif" : usedShield ? "(8 GDS)" : "(Gratuit)"}
-          </span>
+          Bouclier
         </button>
       </div>
 
