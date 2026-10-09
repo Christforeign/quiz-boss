@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useSettings } from "@/lib/site";
 
@@ -38,7 +38,12 @@ export function LocalBanner({ placement }: { placement: string }) {
       return data ?? [];
     },
   });
-  const b = data?.[Math.floor(Date.now() / 60000) % Math.max(1, data?.length ?? 1)];
+  const [idx, setIdx] = useState(0);
+  useEffect(() => {
+    if (!data || data.length <= 1) return;
+    setIdx(Math.floor(Date.now() / 60000) % data.length);
+  }, [data]);
+  const b = data?.[idx % Math.max(1, data?.length ?? 1)];
   if (!b) return null;
   const inner = (
     <div className="flex items-center gap-3 rounded-2xl bg-grad-sunset p-4 text-secondary-foreground shadow-lg animate-pop">

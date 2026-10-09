@@ -82,6 +82,8 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { name: "viewport", content: "width=device-width, initial-scale=1" },
       { title: "QuizBoss — Quiz, statuts & récompenses" },
       { name: "description", content: "Joue au quiz, gagne des pièces et partage tes statuts WhatsApp." },
+      { property: "og:title", content: "QuizBoss — Quiz, statuts & récompenses" },
+      { property: "og:description", content: "Joue au quiz, gagne des pièces et partage tes statuts WhatsApp." },
       { name: "monetag", content: "1e3495038def6fa88ca53d54345f1f69" },
       { name: "theme-color", content: "#141a2e" },
       { property: "og:type", content: "website" },
@@ -99,9 +101,6 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },
       { rel: "stylesheet", href: "https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@600;800&family=Manrope:wght@400;600;700&display=swap" },
     ],
-    scripts: [
-      { src: "https://quge5.com/88/tag.min.js", "data-zone": "292705", async: true, "data-cfasync": "false" },
-    ],
   }),
   shellComponent: RootShell,
   component: RootComponent,
@@ -111,11 +110,11 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
 
 function RootShell({ children }: { children: ReactNode }) {
   return (
-    <html lang="fr" className="dark">
+    <html lang="fr" className="dark" suppressHydrationWarning>
       <head>
         <HeadContent />
       </head>
-      <body>
+      <body suppressHydrationWarning>
         {children}
         <Scripts />
       </body>
