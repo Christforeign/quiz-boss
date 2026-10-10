@@ -175,7 +175,7 @@ export function MonetagRewardModal({
         </div>
 
         {/* Boutons d'action */}
-        {!unlocked ? null        ) : (
+        {unlocked && (
           <div className="space-y-2">
             <Button
               size="lg"
