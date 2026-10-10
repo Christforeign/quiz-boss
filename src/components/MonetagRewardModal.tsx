@@ -146,16 +146,16 @@ export function MonetagRewardModal({
               </div>
 
               {directLinkUrl && (
-                <a
-                  href={directLinkUrl}
-                  target="_blank"
-                  rel="noopener noreferrer sponsored"
-                  onClick={handleInstantUnlockViaLink}
-                  className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-accent px-4 py-2.5 text-xs font-extrabold text-accent-foreground shadow-lg transition-transform active:scale-95"
-                >
-                  <ExternalLink className="h-4 w-4" /> Découvrir l'offre partenaire (Déblocage
-                  immédiat)
-                </a>
+                <div className="overflow-hidden rounded-xl border border-border bg-muted">
+                  <iframe
+                    key={sessionCount}
+                    src={directLinkUrl}
+                    title="Annonce sponsorisée"
+                    className="h-64 w-full"
+                    sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+                    referrerPolicy="no-referrer-when-downgrade"
+                  />
+                </div>
               )}
             </div>
           ) : (
