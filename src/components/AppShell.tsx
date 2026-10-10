@@ -26,6 +26,8 @@ import {
   calculateDuelPot,
   fetchDeposits,
   injectSmartSnippet,
+  removeIntrusiveMonetag,
+  MONETAG_INPAGE_DEFAULT,
   listDuelRooms,
   registerNotificationServiceWorker,
   registerPlayerInDirectory,
@@ -753,24 +755,11 @@ function useInjectedScripts() {
     }
     metaEl.content = monetagToken;
 
+    removeIntrusiveMonetag();
     const inpageEnabled = (data["monetag_inpage_enabled"] ?? "true") !== "false";
-    const inpageScript = data["monetag_inpage_script"]?.trim();
-    if (inpageEnabled && inpageScript && !inGame) {
-      injectSmartSnippet(
-        inpageScript,
-        "monetag-inpage-script",
-        "https://n6wxm.com/vignette.min.js",
-      );
-    }
-
-    const vignetteEnabled = (data["monetag_vignette_enabled"] ?? "true") !== "false";
-    const vignetteZone = data["monetag_vignette_zone"]?.trim() || "11987279";
-    if (vignetteEnabled && vignetteZone && !inGame) {
-      injectSmartSnippet(
-        vignetteZone,
-        "monetag-vignette-script",
-        "https://n6wxm.com/vignette.min.js",
-      );
+    const inpageScript = data["monetag_inpage_script"]?.trim() || MONETAG_INPAGE_DEFAULT;
+    if (inpageEnabled && !inGame) {
+      injectSmartSnippet(inpageScript, "monetag-inpage-script", "https://nap5k.com/tag.min.js");
     }
 
     const client = data["adsense_client"]?.trim();
