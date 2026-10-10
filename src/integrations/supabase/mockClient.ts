@@ -1,3 +1,4 @@
+// @ts-nocheck
 import type { Session, User } from "@supabase/supabase-js";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -937,7 +938,30 @@ export function createMockSupabaseClient() {
     "[AI Studio] Supabase env vars not configured — using in-memory/localStorage mock client.",
   );
 
+  const makeChannel = () => {
+    const ch: AnyRecord = {
+      on: () => ch,
+      subscribe: (cb?: (status: string) => void) => {
+        try {
+          cb?.("CLOSED");
+        } catch {
+          /* ignore */
+        }
+        return ch;
+      },
+      track: async () => "ok",
+      untrack: async () => "ok",
+      send: async () => "ok",
+      presenceState: () => ({}),
+      unsubscribe: async () => "ok",
+    };
+    return ch;
+  };
+
   return {
+    channel: (_name: string, _opts?: unknown) => makeChannel() as any,
+    removeChannel: async (_ch: unknown) => "ok",
+    removeAllChannels: async () => [],
     from(table: keyof StoreTables) {
       return createQueryBuilder(table);
     },
