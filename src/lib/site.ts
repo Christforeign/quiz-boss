@@ -322,78 +322,40 @@ export function injectSmartSnippet(
   document.head.appendChild(sc);
 }
 
-/**
- * Déclenche la publicité Monetag (Vignette + In-Page Push) à la fin d'un Quiz ou d'un Duel,
- * sans gêner les boutons pendant la partie.
- */
-export function triggerPostGameMonetagAd(settings?: Record<string, string>) {
+export const MONETAG_INPAGE_DEFAULT =
+  "<script>(function(s){s.dataset.zone='11999637',s.src='https://nap5k.com/tag.min.js'})([document.documentElement, document.body].filter(Boolean).pop().appendChild(document.createElement('script')))</script>";
+export const MONETAG_DIRECT_LINK_DEFAULT = "https://uplcm.com/4/11999628";
+
+/** Retire les scripts Monetag intrusifs (Vignette / MultiTag) qui détournent les clics. */
+export function removeIntrusiveMonetag() {
   if (typeof document === "undefined") return;
-  const postGameEnabled = (settings?.["monetag_postgame_enabled"] ?? "true") !== "false";
-  if (!postGameEnabled) return;
-
-  const vignetteEnabled = (settings?.["monetag_vignette_enabled"] ?? "true") !== "false";
-  const vignetteInput = settings?.["monetag_vignette_zone"]?.trim() || "11987279";
-
-  if (vignetteEnabled && vignetteInput) {
-    // Réinjecter / rafraîchir le script Vignette à la fin de la partie pour déclencher l'affichage post-jeu
-    injectedFingerprints.delete("monetag-postgame-vignette");
-    injectSmartSnippet(
-      vignetteInput,
-      "monetag-postgame-vignette",
-      "https://n6wxm.com/vignette.min.js",
-    );
-  }
-
-  const inpageEnabled = (settings?.["monetag_inpage_enabled"] ?? "true") !== "false";
-  const inpageInput = settings?.["monetag_inpage_script"]?.trim();
-  if (inpageEnabled && inpageInput) {
-    injectSmartSnippet(inpageInput, "monetag-inpage-script", "https://n6wxm.com/vignette.min.js");
-  }
+  document
+    .querySelectorAll(
+      'script[src*="quge5.com"], script[src*="n6wxm.com"], script[data-zone="228397"], script[data-zone="11987279"], #monetag-vignette-script, #monetag-postgame-vignette, #monetag-rewarded-vignette',
+    )
+    .forEach((el) => el.remove());
 }
 
-/**
- * Déclenche une publicité Monetag récompensée (Vignette + In-Push + Smartlink/Zone dédié)
- * lorsqu'un joueur regarde une pub pour débloquer 1 Partie Duel Gratuite.
- */
+/** Fin de Quiz/Duel : seulement la bannière In-Page Push (aucune redirection). */
+export function triggerPostGameMonetagAd(settings?: Record<string, string>) {
+  if (typeof document === "undefined") return;
+  removeIntrusiveMonetag();
+  if ((settings?.["monetag_postgame_enabled"] ?? "true") === "false") return;
+  if ((settings?.["monetag_inpage_enabled"] ?? "true") === "false") return;
+  const input = settings?.["monetag_inpage_script"]?.trim() || MONETAG_INPAGE_DEFAULT;
+  injectSmartSnippet(input, "monetag-inpage-script", "https://nap5k.com/tag.min.js");
+}
+
+/** Pub pour débloquer 1 Duel gratuit : renvoie le Direct Link (ouvert seulement au clic du joueur). */
 export function triggerRewardedMonetagAd(settings?: Record<string, string>): {
   directLinkUrl?: string;
 } {
-  if (typeof document === "undefined") return {};
-
-  const vignetteInput = settings?.["monetag_vignette_zone"]?.trim() || "11987279";
-  if (vignetteInput) {
-    injectedFingerprints.delete("monetag-rewarded-vignette");
-    injectSmartSnippet(
-      vignetteInput,
-      "monetag-rewarded-vignette",
-      "https://n6wxm.com/vignette.min.js",
-    );
+  removeIntrusiveMonetag();
+  const url = settings?.["monetag_rewarded_url"]?.trim();
+  if (url && /^https?:\/\/[^\s<>"]+$/i.test(url) && !/\.js(\?|$)/i.test(url)) {
+    return { directLinkUrl: url };
   }
-
-  const inpageInput = settings?.["monetag_inpage_script"]?.trim();
-  if (inpageInput) {
-    injectedFingerprints.delete("monetag-rewarded-inpage");
-    injectSmartSnippet(inpageInput, "monetag-rewarded-inpage", "https://n6wxm.com/vignette.min.js");
-  }
-
-  const rewardedInput = settings?.["monetag_rewarded_url"]?.trim();
-  if (rewardedInput) {
-    // Si c'est un lien web pur (Direct Link / Smartlink Monetag), le retourner pour l'afficher/ouvrir
-    if (
-      /^https?:\/\/[^\s<>"]+$/i.test(rewardedInput) &&
-      !/\.js(\?|$)/i.test(rewardedInput)
-    ) {
-      return { directLinkUrl: rewardedInput };
-    }
-    injectedFingerprints.delete("monetag-rewarded-custom");
-    injectSmartSnippet(
-      rewardedInput,
-      "monetag-rewarded-custom",
-      "https://n6wxm.com/vignette.min.js",
-    );
-  }
-
-  return {};
+  return { directLinkUrl: MONETAG_DIRECT_LINK_DEFAULT };
 }
 
 /* ---------- Méthodes de Paiement & Retrait Modifiables ---------- */
