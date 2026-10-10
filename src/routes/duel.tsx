@@ -19,20 +19,21 @@ import {
   Gift,
   BellRing,
   AlertCircle,
-  Pencil,
+  Film,
 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { CATEGORIES, shareWhatsApp } from "@/lib/categories";
-import { PlayerAvatar, PlayerProfileEditor } from "@/components/PlayerAvatar";
+import { PlayerAvatar } from "@/components/PlayerAvatar";
+import { MonetagRewardModal } from "@/components/MonetagRewardModal";
 import {
   addCoins,
   consumeDuel,
+  dailyFreeDuelsRemaining,
   duelsLeft,
   FREE_DUELS_PER_DAY,
+  getPlayer,
   levelFromXp,
-  SHARE_DUEL_BONUS,
-  unlockDuelsByShare,
   usePlayer,
 } from "@/lib/player";
 import {
@@ -168,7 +169,6 @@ function DuelPage() {
 function SetupScreen({ onStart }: { onStart: (s: Setup) => void }) {
   const p = usePlayer();
   const [n, setN] = useState(2); // Minimum 2, Maximum 4
-  const [names, setNames] = useState<string[]>([p.name || "", "", "", ""]);
   const [mode, setMode] = useState<Mode>("online");
   const [stake, setStake] = useState(25);
   const [customStake, setCustomStake] = useState("");
@@ -181,12 +181,23 @@ function SetupScreen({ onStart }: { onStart: (s: Setup) => void }) {
   const [playerSearch, setPlayerSearch] = useState("");
   const [selectedRivals, setSelectedRivals] = useState<string[]>([]);
   const [startingRoom, setStartingRoom] = useState(false);
-  const [showQuickProfileEdit, setShowQuickProfileEdit] = useState(false);
+  const [adModalOpen, setAdModalOpen] = useState(false);
+  const [pendingFreeDuelAction, setPendingFreeDuelAction] = useState<{
+    label: string;
+    run: () => void;
+  } | null>(null);
   const autoAcceptedRef = useRef<string | null>(null);
 
   const left = duelsLeft(p);
+  const dailyFreeLeft = dailyFreeDuelsRemaining(p);
   const pot = calculateDuelPot(stake, n);
-  const myDisplayName = names[0]?.trim() || p.name || `Joueur_${p.id.slice(0, 4)}`;
+  const myDisplayName = p.name?.trim() || `Joueur_${p.id.slice(0, 4)}`;
+
+  function openAdToUnlockFreeDuel(action?: { label: string; run: () => void }) {
+    sfx.click();
+    setPendingFreeDuelAction(action ?? null);
+    setAdModalOpen(true);
+  }
 
   useEffect(() => {
     const refreshLobby = async () => {
@@ -302,11 +313,23 @@ function SetupScreen({ onStart }: { onStart: (s: Setup) => void }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeRoom?.code, p.id, myDisplayName]);
 
-  async function handleCreateRoom(visibility: "public" | "private", targetPseudo?: string) {
-    if (stake === 0 && left <= 0) {
-      return void toast.error(
-        "Tu as déjà utilisé ta partie multijoueur gratuite du jour. Partage sur WhatsApp ou mise en GDS !",
-      );
+  async function handleCreateRoom(
+    visibility: "public" | "private",
+    targetPseudo?: string,
+    bypassAdCheck = false,
+  ) {
+    if (stake === 0 && !bypassAdCheck && duelsLeft(getPlayer()) <= 0) {
+      openAdToUnlockFreeDuel({
+        label: targetPseudo
+          ? `⚔️ Débloquer & Défier ${targetPseudo} gratuitement`
+          : `🔥 Débloquer & Ouvrir ma Chambre Gratuite (${n}J)`,
+        run: () => {
+          setAdModalOpen(false);
+          setPendingFreeDuelAction(null);
+          void handleCreateRoom(visibility, targetPseudo, true);
+        },
+      });
+      return;
     }
     if (stake > p.coins) {
       return void toast.error(
@@ -389,7 +412,7 @@ function SetupScreen({ onStart }: { onStart: (s: Setup) => void }) {
     );
   }
 
-  async function handleJoinRoom(codeRaw?: string) {
+  async function handleJoinRoom(codeRaw?: string, bypassAdCheck = false) {
     const code = (codeRaw ?? joinCodeInput).trim().toUpperCase();
     if (!code) return void toast.error("Entre un code de chambre");
     const list = await listDuelRooms();
@@ -421,9 +444,17 @@ function SetupScreen({ onStart }: { onStart: (s: Setup) => void }) {
       return;
     }
 
-    // Chaque joueur doit miser exactement le montant fixé par celui qui a lancé la chambre
-    if (room.stake === 0 && left <= 0) {
-      return void toast.error("Partie gratuite déjà utilisée aujourd'hui.");
+    // Chaque Duel Gratuit = 1 Pub Monetag : si la chambre est gratuite et que le joueur n'a pas encore débloqué sa partie, ouvrir la pub Monetag !
+    if (room.stake === 0 && !bypassAdCheck && duelsLeft(getPlayer()) <= 0) {
+      openAdToUnlockFreeDuel({
+        label: `⚡ Débloquer & Rejoindre le Duel Gratuit (${room.code})`,
+        run: () => {
+          setAdModalOpen(false);
+          setPendingFreeDuelAction(null);
+          void handleJoinRoom(code, true);
+        },
+      });
+      return;
     }
     if (room.stake > p.coins) {
       return void toast.error(
@@ -581,9 +612,9 @@ function SetupScreen({ onStart }: { onStart: (s: Setup) => void }) {
     }
   }
 
-  const finalLocalNames = names
-    .slice(0, n)
-    .map((x, i) => x.trim() || (i === 0 ? myDisplayName : `Joueur ${i + 1}`));
+  const finalLocalNames = Array.from({ length: n }).map((_, i) =>
+    i === 0 ? myDisplayName : `Joueur ${i + 1}`,
+  );
 
   const otherPlayers = registeredPlayers.filter(
     (rp) =>
@@ -613,30 +644,71 @@ function SetupScreen({ onStart }: { onStart: (s: Setup) => void }) {
           choisit : les autres perdent ! Si aucun joueur ne répond, la manche est <b>nulle</b>.
         </p>
 
-        {/* Partie Multijoueur Gratuite */}
-        <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-2xl bg-background/20 px-3.5 py-2 text-xs">
-          <span className="flex items-center gap-1.5 font-extrabold">
-            <Gift className="h-4 w-4" />
-            {left > 0
-              ? `🎁 Tu as ${left} partie multijoueur gratuite disponible !`
-              : "Partie gratuite du jour utilisée (partage sur WhatsApp pour +3 parties gratuites)"}
-          </span>
-          {left > 0 && stake !== 0 && (
+        {/* Parties Multijoueur Gratuites */}
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-2xl bg-background/20 px-3.5 py-2.5 text-xs">
+          <div className="space-y-0.5">
+            <span className="flex items-center gap-1.5 font-extrabold">
+              <Gift className="h-4 w-4" />
+              {left > 0
+                ? `🎁 ${left} Partie(s) Duel Gratuite(s) débloquée(s) et prête(s) !`
+                : `🎁 ${dailyFreeLeft}/${FREE_DUELS_PER_DAY} Parties Duel Gratuites disponibles aujourd'hui`}
+            </span>
+            <p className="text-[11px] opacity-90">
+              🎬 Regarde une courte annonce pour débloquer une partie gratuite.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-1.5">
             <button
               type="button"
               onClick={() => {
-                sfx.click();
                 setStake(0);
                 setCustomStake("");
-                toast.success("🎁 Mode Partie Multijoueur Gratuite (0 GDS) activé !");
+                openAdToUnlockFreeDuel({
+                  label: "🎁 Partie Débloquée — Continuer vers le Duel Gratuit",
+                  run: () => {
+                    setAdModalOpen(false);
+                    setPendingFreeDuelAction(null);
+                  },
+                });
               }}
-              className="rounded-full bg-background px-3 py-1 font-extrabold text-foreground shadow transition-transform active:scale-95"
+              className="inline-flex items-center gap-1.5 rounded-full bg-background px-3 py-1.5 font-extrabold text-foreground shadow transition-transform active:scale-95"
             >
-              Jouer ma partie gratuite
+              <Film className="h-3.5 w-3.5 text-primary" /> Débloquer +1 Duel Gratuit
             </button>
-          )}
+            {left > 0 && stake !== 0 && (
+              <button
+                type="button"
+                onClick={() => {
+                  sfx.click();
+                  setStake(0);
+                  setCustomStake("");
+                  toast.success("🎁 Mode Partie Duel Gratuite (0 GDS) sélectionné !");
+                }}
+                className="rounded-full bg-primary px-3 py-1.5 font-extrabold text-primary-foreground shadow transition-transform active:scale-95"
+              >
+                Jouer en Gratuit ({left})
+              </button>
+            )}
+          </div>
         </div>
       </div>
+
+      {/* Modal pour débloquer 1 Partie Duel Gratuite */}
+      <MonetagRewardModal
+        open={adModalOpen}
+        onClose={() => {
+          setAdModalOpen(false);
+          setPendingFreeDuelAction(null);
+        }}
+        actionLabel={pendingFreeDuelAction?.label}
+        onUnlocked={
+          pendingFreeDuelAction
+            ? () => {
+                pendingFreeDuelAction.run();
+              }
+            : undefined
+        }
+      />
 
       {/* Chambre active (Ouverte ou Privée — attente des joueurs) */}
       {activeRoom && (
@@ -923,10 +995,45 @@ function SetupScreen({ onStart }: { onStart: (s: Setup) => void }) {
               }}
               className="font-bold"
             >
-              {s === 0 ? `🎁 0 GDS (${left} Gratuite)` : `${s} GDS`}
+              {s === 0
+                ? left > 0
+                  ? `🎁 0 GDS (${left} Prête)`
+                  : `🎁 0 GDS (Duel Gratuit)`
+                : `${s} GDS`}
             </Button>
           ))}
         </div>
+
+        {stake === 0 && (
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-primary/40 bg-primary/10 p-3 text-xs">
+            <div className="space-y-0.5">
+              <p className="font-extrabold text-primary">
+                🎁 Parties Duel Gratuites Sponsorisées
+              </p>
+              <p className="text-[11px] text-muted-foreground">
+                {left > 0
+                  ? `Tu as ${left} partie(s) gratuite(s) déjà débloquée(s) ! Tu peux lancer ton duel ou en débloquer davantage.`
+                  : `Tu peux débloquer plusieurs parties gratuites (${dailyFreeLeft} disponibles aujourd'hui) en regardant une courte annonce.`}
+              </p>
+            </div>
+            <Button
+              type="button"
+              size="sm"
+              onClick={() =>
+                openAdToUnlockFreeDuel({
+                  label: "🎁 Partie Débloquée — Prêt à jouer !",
+                  run: () => {
+                    setAdModalOpen(false);
+                    setPendingFreeDuelAction(null);
+                  },
+                })
+              }
+              className="font-extrabold"
+            >
+              <Film className="h-3.5 w-3.5" /> Débloquer +1 Duel Gratuit
+            </Button>
+          </div>
+        )}
 
         <div className="space-y-1">
           <label className="text-xs font-bold text-muted-foreground">
@@ -1003,9 +1110,9 @@ function SetupScreen({ onStart }: { onStart: (s: Setup) => void }) {
         )}
       </section>
 
-      {/* 3. Mode, Nom & Photo de Profil */}
+      {/* 3. Mode de jeu */}
       <section className="space-y-3 rounded-2xl bg-card p-4">
-        <h2 className="font-extrabold">3. Ton Nom, Photo de Profil & Mode de jeu</h2>
+        <h2 className="font-extrabold">3. Mode de jeu</h2>
         <div className="grid grid-cols-3 gap-2">
           <button
             type="button"
@@ -1056,29 +1163,6 @@ function SetupScreen({ onStart }: { onStart: (s: Setup) => void }) {
             <p className="text-[10px] text-muted-foreground">Chacun son tour</p>
           </button>
         </div>
-
-        {mode === "online" ? (
-          <PlayerProfileEditor
-            onSaved={async (newName) => {
-              setNames([newName, names[1] ?? "", names[2] ?? "", names[3] ?? ""]);
-              setRegisteredPlayers(await fetchAllRegisteredPlayers());
-            }}
-          />
-        ) : (
-          <div className="space-y-2">
-            {Array.from({ length: n }).map((_, i) => (
-              <Input
-                key={i}
-                placeholder={
-                  i === 0 ? `${myDisplayName} (ton portefeuille)` : `Pseudo Joueur ${i + 1}`
-                }
-                value={names[i]}
-                maxLength={18}
-                onChange={(e) => setNames(names.map((x, j) => (j === i ? e.target.value : x)))}
-              />
-            ))}
-          </div>
-        )}
       </section>
 
       {/* 4. Catégorie */}
@@ -1112,44 +1196,6 @@ function SetupScreen({ onStart }: { onStart: (s: Setup) => void }) {
               {otherPlayers.length} joueur{otherPlayers.length > 1 ? "s" : ""} dispo
             </span>
           </div>
-
-          {/* Barre de mon profil visible dans Joueurs disponibles + bouton modifier nom/photo */}
-          <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-primary/25 bg-primary/10 p-2.5 text-xs">
-            <div className="flex items-center gap-2.5 min-w-0">
-              <PlayerAvatar name={myDisplayName} avatarUrl={p.avatarUrl} size="sm" online={true} />
-              <div className="min-w-0">
-                <p className="truncate font-extrabold text-foreground">
-                  Toi : <span className="text-primary">{myDisplayName}</span>
-                </p>
-                <p className="text-[10px] text-muted-foreground">
-                  Visible par les autres joueurs disponibles
-                </p>
-              </div>
-            </div>
-            <Button
-              type="button"
-              size="sm"
-              variant="secondary"
-              onClick={() => {
-                sfx.click();
-                setShowQuickProfileEdit((v) => !v);
-              }}
-              className="h-7 px-2.5 text-[11px] font-bold"
-            >
-              <Pencil className="h-3 w-3 text-primary" />
-              {showQuickProfileEdit ? "Fermer" : "Modifier nom & photo"}
-            </Button>
-          </div>
-
-          {showQuickProfileEdit && (
-            <PlayerProfileEditor
-              onSaved={async (newName) => {
-                setNames([newName, names[1] ?? "", names[2] ?? "", names[3] ?? ""]);
-                setRegisteredPlayers(await fetchAllRegisteredPlayers());
-                setShowQuickProfileEdit(false);
-              }}
-            />
-          )}
 
           {/* Barre de recherche de pseudo */}
           <div className="relative">
@@ -1283,23 +1329,48 @@ function SetupScreen({ onStart }: { onStart: (s: Setup) => void }) {
       )}
 
       {/* Bouton principal de lancement */}
-      {left <= 0 && stake === 0 ? (
-        <div className="space-y-2 rounded-2xl bg-card p-4 text-center">
-          <p className="font-semibold">
-            Tu as utilisé ta {FREE_DUELS_PER_DAY} partie multijoueur gratuite du jour.
-          </p>
+      {stake === 0 && left <= 0 ? (
+        <div className="space-y-2.5 rounded-3xl border-2 border-primary/40 bg-card p-4 text-center shadow-glow">
+          <div className="space-y-1">
+            <span className="inline-flex items-center gap-1 rounded-full bg-primary/15 px-3 py-0.5 text-[11px] font-extrabold text-primary">
+              <Film className="h-3.5 w-3.5" /> Accès Duel Gratuit
+            </span>
+            <p className="text-sm font-extrabold">
+              🎬 Débloque gratuitement ta partie Duel en quelques secondes !
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Regarde une courte annonce sponsorisée pour lancer ta partie ({dailyFreeLeft} parties
+              gratuites disponibles aujourd'hui).
+            </p>
+          </div>
           <Button
             size="lg"
-            className="w-full bg-success text-primary-foreground hover:bg-success/90"
+            className="w-full text-base font-extrabold shadow-glow"
             onClick={() => {
-              shareWhatsApp(
-                `⚔️ Je te défie en duel sur QuizBoss ! Mise 25 GDS et gagne 45 GDS 👉 ${window.location.origin}/duel?ref=${p.id}`,
-              );
-              unlockDuelsByShare();
-              toast.success(`+${SHARE_DUEL_BONUS} parties gratuites débloquées !`);
+              if (mode === "online") {
+                void handleCreateRoom("public");
+              } else {
+                openAdToUnlockFreeDuel({
+                  label: `⚔️ Lancer mon Duel Gratuit (${n} Joueurs)`,
+                  run: () => {
+                    setAdModalOpen(false);
+                    setPendingFreeDuelAction(null);
+                    onStart({
+                      names: finalLocalNames,
+                      myPlayerIndex: 0,
+                      mode,
+                      stake: 0,
+                      category,
+                    });
+                  },
+                });
+              }
             }}
           >
-            <Share2 /> Partager sur WhatsApp (+{SHARE_DUEL_BONUS} parties gratuites)
+            <Film className="h-5 w-5" />
+            {mode === "online"
+              ? `Débloquer & Lancer un Défi Gratuit (${n} Joueurs)`
+              : `Débloquer & Lancer le Duel Gratuit (${n} Joueurs)`}
           </Button>
         </div>
       ) : mode === "online" ? (
@@ -1311,7 +1382,7 @@ function SetupScreen({ onStart }: { onStart: (s: Setup) => void }) {
         >
           <Swords className="h-5 w-5" />
           {stake === 0
-            ? `Lancer un Défi Gratuit (${n} Joueurs)`
+            ? `Lancer mon Défi Gratuit Débloqué (${n} Joueurs · ${left} prête)`
             : `Lancer un Défi Duel (${n} Joueurs · Mise ${stake} GDS → Gain ${pot.winnerPayout} GDS)`}
         </Button>
       ) : (
@@ -1330,7 +1401,7 @@ function SetupScreen({ onStart }: { onStart: (s: Setup) => void }) {
           }
         >
           <Swords /> Lancer le duel local ({n} joueurs ·{" "}
-          {stake === 0 ? "Partie Gratuite" : `Gain ${pot.winnerPayout} GDS`})
+          {stake === 0 ? `Partie Gratuite Débloquée (${left})` : `Gain ${pot.winnerPayout} GDS`})
         </Button>
       )}
     </div>

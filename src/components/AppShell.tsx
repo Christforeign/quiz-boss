@@ -527,17 +527,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <MuteButton />
             <Link
               to="/auth"
-              aria-label="Mon profil et compte"
-              title="Modifier mon nom, ma photo de profil et mon compte"
-              className={`flex h-8 w-8 items-center justify-center overflow-hidden rounded-full ${
-                session ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
+              aria-label="Mon profil"
+              title="Mon profil"
+              className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-extrabold transition-transform active:scale-95 ${
+                session ? "bg-primary text-primary-foreground" : "bg-muted text-foreground"
               }`}
             >
               {player.avatarUrl ? (
-                <PlayerAvatar name={myPseudo} avatarUrl={player.avatarUrl} size="sm" />
+                <PlayerAvatar name={myPseudo} avatarUrl={player.avatarUrl} size="xs" />
               ) : (
                 <UserRound className="h-4 w-4" />
               )}
+              <span>Profil</span>
             </Link>
           </div>
         )}

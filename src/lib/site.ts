@@ -38,6 +38,11 @@ export const SETTING_KEYS = [
     label:
       "Afficher automatiquement la pub Monetag après chaque Quiz et chaque Duel (true / false, défaut: true)",
   },
+  {
+    key: "monetag_rewarded_url",
+    label:
+      "🎬 Pub Monetag pour Débloquer 1 Duel Gratuit — Lien Direct (Smartlink), Zone ID ou Script (optionnel : utilise Vignette/In-Push par défaut)",
+  },
   { key: "whatsapp_support", label: "Numéro WhatsApp support (ex: 50937000000)" },
   { key: "whatsapp_channel", label: "Lien de la chaîne WhatsApp officielle" },
   { key: "deposit_min_amount", label: "Montant minimum de dépôt en GDS (défaut: 25)" },
@@ -344,6 +349,51 @@ export function triggerPostGameMonetagAd(settings?: Record<string, string>) {
   if (inpageEnabled && inpageInput) {
     injectSmartSnippet(inpageInput, "monetag-inpage-script", "https://n6wxm.com/vignette.min.js");
   }
+}
+
+/**
+ * Déclenche une publicité Monetag récompensée (Vignette + In-Push + Smartlink/Zone dédié)
+ * lorsqu'un joueur regarde une pub pour débloquer 1 Partie Duel Gratuite.
+ */
+export function triggerRewardedMonetagAd(settings?: Record<string, string>): {
+  directLinkUrl?: string;
+} {
+  if (typeof document === "undefined") return {};
+
+  const vignetteInput = settings?.["monetag_vignette_zone"]?.trim() || "11987279";
+  if (vignetteInput) {
+    injectedFingerprints.delete("monetag-rewarded-vignette");
+    injectSmartSnippet(
+      vignetteInput,
+      "monetag-rewarded-vignette",
+      "https://n6wxm.com/vignette.min.js",
+    );
+  }
+
+  const inpageInput = settings?.["monetag_inpage_script"]?.trim();
+  if (inpageInput) {
+    injectedFingerprints.delete("monetag-rewarded-inpage");
+    injectSmartSnippet(inpageInput, "monetag-rewarded-inpage", "https://n6wxm.com/vignette.min.js");
+  }
+
+  const rewardedInput = settings?.["monetag_rewarded_url"]?.trim();
+  if (rewardedInput) {
+    // Si c'est un lien web pur (Direct Link / Smartlink Monetag), le retourner pour l'afficher/ouvrir
+    if (
+      /^https?:\/\/[^\s<>"]+$/i.test(rewardedInput) &&
+      !/\.js(\?|$)/i.test(rewardedInput)
+    ) {
+      return { directLinkUrl: rewardedInput };
+    }
+    injectedFingerprints.delete("monetag-rewarded-custom");
+    injectSmartSnippet(
+      rewardedInput,
+      "monetag-rewarded-custom",
+      "https://n6wxm.com/vignette.min.js",
+    );
+  }
+
+  return {};
 }
 
 /* ---------- Méthodes de Paiement & Retrait Modifiables ---------- */

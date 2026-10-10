@@ -1988,6 +1988,19 @@ function SettingsAdmin() {
         </div>
 
         <div className="space-y-2">
+          <Label>
+            🎬 Pub Monetag pour Débloquer 1 Duel Gratuit (Lien Direct Smartlink, Zone ID ou Script —
+            optionnel, utilise ta Vignette/In-Push par défaut)
+          </Label>
+          <Input
+            className="font-mono text-xs"
+            placeholder="Optionnel : https://... (Direct Link Monetag) ou Zone ID / Script dédié aux Duels Gratuits"
+            value={vals["monetag_rewarded_url"] ?? ""}
+            onChange={(e) => setVals({ ...vals, monetag_rewarded_url: e.target.value })}
+          />
+        </div>
+
+        <div className="space-y-2">
           <Label>Jeton de validation Monetag (&lt;meta name="monetag"&gt;)</Label>
           <Input
             placeholder="59029dc25ef25e3de878e23f259217d6"
@@ -2029,6 +2042,7 @@ function SettingsAdmin() {
               "monetag_inpage_enabled",
               "monetag_inpage_script",
               "monetag_postgame_enabled",
+              "monetag_rewarded_url",
               "head_script",
             ].includes(k.key),
         ).map(({ key, label }) => (

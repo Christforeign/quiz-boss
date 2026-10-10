@@ -21,6 +21,8 @@ export type Player = {
   duelDay?: string;
   duelsUsed?: number;
   duelBonus?: number;
+  /** Nombre de parties Duel Gratuites débloquées aujourd'hui en regardant une pub Monetag (1 pub = 1 duel gratuit) */
+  duelAdUnlocked?: number;
   creditedDeposits?: string[];
 };
 
@@ -32,8 +34,8 @@ export type Tx = {
   unit?: "GDS" | "PTS";
 };
 
-export const FREE_DUELS_PER_DAY = 1;
-export const SHARE_DUEL_BONUS = 3;
+export const FREE_DUELS_PER_DAY = 10;
+export const SHARE_DUEL_BONUS = 5;
 
 // Nouvelle clé v3 : réinitialise le solde GDS de tous les joueurs à 0
 const KEY = "quizboss-player-v3";
@@ -172,21 +174,52 @@ export function resetLocalBalance() {
 }
 
 const today = () => new Date().toISOString().slice(0, 10);
+
+/** Nombre de parties Duel Gratuites déjà débloquées via pub Monetag et prêtes à être jouées immédiatement */
 export function duelsLeft(p: Player) {
+  if (p.duelDay !== today()) return 0;
+  return Math.max(0, (p.duelAdUnlocked ?? 0) - (p.duelsUsed ?? 0));
+}
+
+/** Quota quotidien clément de parties Duel Gratuites restantes à débloquer via pub aujourd'hui */
+export function dailyFreeDuelsRemaining(p: Player) {
   if (p.duelDay !== today()) return FREE_DUELS_PER_DAY;
   return Math.max(0, FREE_DUELS_PER_DAY + (p.duelBonus ?? 0) - (p.duelsUsed ?? 0));
 }
+
+/** Débloque +1 partie Duel Gratuite après avoir regardé 1 publicité Monetag */
+export function unlockOneDuelByAd() {
+  sfx.coin();
+  updatePlayer((p) => {
+    if (p.duelDay !== today()) {
+      return {
+        duelDay: today(),
+        duelsUsed: 0,
+        duelBonus: 0,
+        duelAdUnlocked: 1,
+      };
+    }
+    const nextUnlocked = (p.duelAdUnlocked ?? 0) + 1;
+    const currentMax = FREE_DUELS_PER_DAY + (p.duelBonus ?? 0);
+    return {
+      duelAdUnlocked: nextUnlocked,
+      duelBonus:
+        nextUnlocked > currentMax ? (p.duelBonus ?? 0) + (nextUnlocked - currentMax) : p.duelBonus,
+    };
+  });
+}
+
 export function consumeDuel() {
   updatePlayer((p) =>
     p.duelDay !== today()
-      ? { duelDay: today(), duelsUsed: 1, duelBonus: 0 }
+      ? { duelDay: today(), duelsUsed: 1, duelBonus: 0, duelAdUnlocked: 1 }
       : { duelsUsed: (p.duelsUsed ?? 0) + 1 },
   );
 }
 export function unlockDuelsByShare() {
   updatePlayer((p) =>
     p.duelDay !== today()
-      ? { duelDay: today(), duelsUsed: 0, duelBonus: SHARE_DUEL_BONUS }
+      ? { duelDay: today(), duelsUsed: 0, duelBonus: SHARE_DUEL_BONUS, duelAdUnlocked: 0 }
       : { duelBonus: (p.duelBonus ?? 0) + SHARE_DUEL_BONUS },
   );
 }
