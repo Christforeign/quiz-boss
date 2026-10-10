@@ -1963,7 +1963,7 @@ function SettingsAdmin() {
 
         <div className="space-y-2">
           <Label>
-            Fonction Pub 1 — Vignette Banner (Zone ID ex: 11987279, Lien URL ou Script complet)
+            Vignette Banner — DÉSACTIVÉE (détournait les clics des boutons, ignorée)
           </Label>
           <Textarea
             rows={2}
