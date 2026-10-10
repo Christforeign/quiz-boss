@@ -6,6 +6,8 @@ import { sfx } from "@/lib/sound";
 export type Player = {
   id: string;
   name: string;
+  /** Photo de profil du joueur (URL ou Data URL) affichée dans Joueurs disponibles & Duels */
+  avatarUrl?: string;
   /** Solde réel en GDS (uniquement dépôts + gains de Duels avec mise — seul échangeable/retirable) */
   coins: number;
   /** Points accumulés en Quiz Solo (non échangeables, servent au classement et XP) */
@@ -89,6 +91,7 @@ function pushProfile() {
     await supabase
       .from("profiles")
       .update({
+        display_name: p.name?.trim() || null,
         coins: p.coins,
         xp: p.xp,
         games_played: p.gamesPlayed,
@@ -208,6 +211,11 @@ async function loadProfile(s: Session) {
   const alreadyReset =
     typeof window !== "undefined" && window.localStorage.getItem(localStampKey) === resetStamp;
 
+  const metaAvatar =
+    typeof s.user.user_metadata?.avatar_url === "string"
+      ? s.user.user_metadata.avatar_url
+      : undefined;
+
   if (!alreadyReset) {
     if (typeof window !== "undefined") {
       window.localStorage.setItem(localStampKey, resetStamp);
@@ -218,7 +226,8 @@ async function loadProfile(s: Session) {
       .eq("id", s.user.id);
     setLocal({
       ...local,
-      name: data.display_name ?? (s.user.email?.split("@")[0] || ""),
+      name: local.name?.trim() || data.display_name || (s.user.email?.split("@")[0] ?? ""),
+      avatarUrl: local.avatarUrl || metaAvatar,
       coins: 0,
       xp: data.xp,
       gamesPlayed: data.games_played,
@@ -231,7 +240,8 @@ async function loadProfile(s: Session) {
 
   setLocal({
     ...local,
-    name: data.display_name ?? (s.user.email?.split("@")[0] || ""),
+    name: local.name?.trim() || data.display_name || (s.user.email?.split("@")[0] ?? ""),
+    avatarUrl: local.avatarUrl || metaAvatar,
     coins: data.coins,
     xp: data.xp,
     gamesPlayed: data.games_played,

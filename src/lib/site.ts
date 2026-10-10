@@ -150,6 +150,52 @@ export async function uploadPaymentProof(file: File): Promise<string> {
   return uploadMedia(file, "deposits");
 }
 
+/**
+ * Compresse et recadre une photo de profil en carré 160x160 ultra-léger
+ * pour une synchronisation instantanée entre tous les joueurs du site.
+ */
+export async function uploadProfilePhoto(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("Impossible de lire la photo"));
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = () => resolve(String(reader.result));
+      img.onload = () => {
+        const size = 160;
+        const c = document.createElement("canvas");
+        c.width = size;
+        c.height = size;
+        const ctx = c.getContext("2d");
+        if (!ctx) return resolve(String(reader.result));
+        const minSide = Math.min(img.width, img.height);
+        const sx = Math.floor((img.width - minSide) / 2);
+        const sy = Math.floor((img.height - minSide) / 2);
+        ctx.drawImage(img, sx, sy, minSide, minSide, 0, 0, size, size);
+        resolve(c.toDataURL("image/jpeg", 0.78));
+      };
+      img.src = String(reader.result);
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+function makeSvgAvatar(bg1: string, bg2: string, emoji: string): string {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="${bg1}"/><stop offset="100%" stop-color="${bg2}"/></linearGradient></defs><rect width="120" height="120" rx="60" fill="url(#g)"/><text x="50%" y="54%" dominant-baseline="middle" text-anchor="middle" font-size="60">${emoji}</text></svg>`;
+  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+}
+
+export const PRESET_AVATARS = [
+  { id: "crown", label: "Boss", url: makeSvgAvatar("#f59e0b", "#ef4444", "👑") },
+  { id: "lion", label: "Lion", url: makeSvgAvatar("#8b5cf6", "#ec4899", "🦁") },
+  { id: "bolt", label: "Éclair", url: makeSvgAvatar("#10b981", "#059669", "⚡") },
+  { id: "fire", label: "Flamme", url: makeSvgAvatar("#f97316", "#dc2626", "🔥") },
+  { id: "dj", label: "Vibes", url: makeSvgAvatar("#3b82f6", "#6366f1", "🎧") },
+  { id: "gem", label: "Diamant", url: makeSvgAvatar("#06b6d4", "#2563eb", "💎") },
+  { id: "queen", label: "Queen", url: makeSvgAvatar("#ec4899", "#9333ea", "👸🏾") },
+  { id: "king", label: "King", url: makeSvgAvatar("#14b8a6", "#0f766e", "🥷🏾") },
+] as const;
+
 function readFileAsDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -682,6 +728,7 @@ export function calculateDuelPot(stake: number, playerCount: number): DuelPotBre
 export type RegisteredPlayer = {
   id: string;
   pseudo: string;
+  avatarUrl?: string;
   level: number;
   coins?: number;
   xp?: number;
@@ -786,9 +833,47 @@ export async function fetchAllRegisteredPlayers(): Promise<RegisteredPlayer[]> {
       map.set(rp.id, {
         ...prev,
         ...rp,
+        avatarUrl: rp.avatarUrl || prev?.avatarUrl,
         online: true,
       });
     }
+  }
+
+  // Lire aussi l'annuaire cross-user depuis public.referrals (accessible en SELECT/INSERT à tous les joueurs)
+  try {
+    const { data: refPlayers } = await supabase
+      .from("referrals")
+      .select("invitee_device, created_at")
+      .eq("referrer_id", "QB_PLAYER")
+      .order("created_at", { ascending: false })
+      .limit(120);
+    for (const row of refPlayers ?? []) {
+      try {
+        const parsed = JSON.parse(row.invitee_device) as RegisteredPlayer;
+        if (parsed?.id && parsed?.pseudo && !isFakeLegacyPlayer(parsed)) {
+          const prev = map.get(parsed.id);
+          const isRecent =
+            Date.now() - new Date(row.created_at || parsed.updatedAt).getTime() < 15 * 60 * 1000;
+          if (!prev || prev.updatedAt < parsed.updatedAt) {
+            map.set(parsed.id, {
+              ...prev,
+              ...parsed,
+              avatarUrl: parsed.avatarUrl || prev?.avatarUrl,
+              online: Boolean(prev?.online || isRecent),
+            });
+          } else if (parsed.avatarUrl && !prev.avatarUrl) {
+            map.set(parsed.id, {
+              ...prev,
+              avatarUrl: parsed.avatarUrl,
+            });
+          }
+        }
+      } catch {
+        // ignore
+      }
+    }
+  } catch {
+    // ignore
   }
 
   return Array.from(map.values()).sort((a, b) => {
@@ -797,17 +882,25 @@ export async function fetchAllRegisteredPlayers(): Promise<RegisteredPlayer[]> {
   });
 }
 
+let lastPlayerDirPushKey = "";
+
 export async function registerPlayerInDirectory(player: {
   id: string;
   pseudo: string;
   level: number;
+  avatarUrl?: string;
 }) {
   const cleanPseudo = player.pseudo.trim();
   if (!cleanPseudo || isFakeLegacyPlayer({ id: player.id, pseudo: cleanPseudo })) return;
+  const avatarSig = player.avatarUrl ? player.avatarUrl.slice(-32) : "";
+  const pushKey = `${player.id}:${cleanPseudo}:${player.level}:${avatarSig}`;
   const all = await fetchAllRegisteredPlayers();
+  const existing = all.find((x) => x.id === player.id);
+  const finalAvatar = player.avatarUrl !== undefined ? player.avatarUrl : existing?.avatarUrl;
   const entry: RegisteredPlayer = {
     id: player.id,
     pseudo: cleanPseudo,
+    avatarUrl: finalAvatar,
     level: player.level,
     online: true,
     updatedAt: new Date().toISOString(),
@@ -817,6 +910,20 @@ export async function registerPlayerInDirectory(player: {
   if (typeof window !== "undefined") {
     try {
       window.localStorage.setItem(LOCAL_PLAYERS_DIR_KEY, JSON.stringify(next));
+    } catch {
+      // ignore
+    }
+  }
+  if (lastPlayerDirPushKey !== pushKey) {
+    lastPlayerDirPushKey = pushKey;
+    try {
+      await supabase.from("referrals").insert({
+        referrer_id: "QB_PLAYER",
+        invitee_device: JSON.stringify({
+          ...entry,
+          _uid: `${player.id}-${Date.now()}`,
+        }),
+      });
     } catch {
       // ignore
     }
@@ -832,31 +939,47 @@ export async function registerPlayerInDirectory(player: {
   }
 }
 
-/* ---------- Salons Multijoueurs Vrais Users (Chambre Libre & Privée, 2 à 4 joueurs) ---------- */
+/* ---------- Salons Multijoueurs & Défis en direct (2 à 4 joueurs) ---------- */
 
 export type DuelParticipant = {
   id: string;
   name: string;
+  avatarUrl?: string;
   score: number;
   finished: boolean;
+};
+
+export type DuelRoomQuestion = {
+  id: string;
+  category: string;
+  question: string;
+  options: string[];
+  correct_index: number;
+  lang: string;
+  image_url: string | null;
+  difficulty: number;
 };
 
 export type DuelRoom = {
   code: string;
   hostId: string;
   hostName: string;
+  hostAvatar?: string;
   category: string;
   stake: number;
   maxPlayers: number; // 2..4
   visibility: "public" | "private";
+  targetPseudo?: string;
   invitedPseudos?: string[];
   status: "waiting" | "playing" | "finished";
   players: DuelParticipant[];
   questionIds: string[];
+  questions?: DuelRoomQuestion[];
   createdAt: string;
+  updatedAt?: string;
 };
 
-const LOCAL_ROOMS_KEY = "quizboss-duel-rooms-v3";
+const LOCAL_ROOMS_KEY = "quizboss-duel-rooms-v4";
 const SETTINGS_ROOMS_KEY = "duel_rooms_active_json";
 
 function readLocalRooms(): DuelRoom[] {
@@ -879,7 +1002,57 @@ function writeLocalRooms(rooms: DuelRoom[]) {
 }
 
 export async function listDuelRooms(): Promise<DuelRoom[]> {
-  const local = readLocalRooms();
+  const map = new Map<string, DuelRoom>();
+  const now = Date.now();
+  const MAX_AGE_MS = 2 * 60 * 60 * 1000; // 2h
+
+  const mergeRoom = (r: DuelRoom) => {
+    if (!r?.code) return;
+    const age = now - new Date(r.updatedAt || r.createdAt).getTime();
+    if (age > MAX_AGE_MS) return;
+    const existing = map.get(r.code);
+    if (!existing) {
+      map.set(r.code, r);
+      return;
+    }
+    const existingTs = new Date(existing.updatedAt || existing.createdAt).getTime();
+    const newTs = new Date(r.updatedAt || r.createdAt).getTime();
+    if (
+      newTs >= existingTs ||
+      r.players.length > existing.players.length ||
+      (r.status === "playing" && existing.status === "waiting")
+    ) {
+      map.set(r.code, {
+        ...existing,
+        ...r,
+        questions: r.questions?.length ? r.questions : existing.questions,
+      });
+    }
+  };
+
+  for (const r of readLocalRooms()) mergeRoom(r);
+
+  // 1. Lire depuis public.referrals (accessible à tous les joueurs sur Android, iOS, Windows, Mac)
+  try {
+    const { data: refRows } = await supabase
+      .from("referrals")
+      .select("invitee_device, created_at")
+      .eq("referrer_id", "QB_ROOM")
+      .order("created_at", { ascending: false })
+      .limit(60);
+    for (const row of refRows ?? []) {
+      try {
+        const parsed = JSON.parse(row.invitee_device) as DuelRoom;
+        mergeRoom(parsed);
+      } catch {
+        // ignore
+      }
+    }
+  } catch {
+    // ignore
+  }
+
+  // 2. Lire aussi depuis app_settings si disponible
   try {
     const { data } = await supabase
       .from("app_settings")
@@ -888,25 +1061,44 @@ export async function listDuelRooms(): Promise<DuelRoom[]> {
       .maybeSingle();
     if (data?.value) {
       const remote = JSON.parse(data.value) as DuelRoom[];
-      const map = new Map<string, DuelRoom>();
-      for (const r of [...local, ...remote]) map.set(r.code, r);
-      const merged = Array.from(map.values()).sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
-      writeLocalRooms(merged);
-      return merged;
+      for (const r of remote) mergeRoom(r);
     }
   } catch {
     // ignore
   }
-  return local;
+
+  const merged = Array.from(map.values()).sort((a, b) =>
+    (a.updatedAt || a.createdAt) < (b.updatedAt || b.createdAt) ? 1 : -1,
+  );
+  writeLocalRooms(merged);
+  return merged;
 }
 
 export async function saveDuelRoom(room: DuelRoom): Promise<DuelRoom> {
+  const stamped: DuelRoom = {
+    ...room,
+    updatedAt: new Date().toISOString(),
+  };
   const rooms = await listDuelRooms();
-  const idx = rooms.findIndex((r) => r.code === room.code);
-  if (idx >= 0) rooms[idx] = room;
-  else rooms.unshift(room);
+  const idx = rooms.findIndex((r) => r.code === stamped.code);
+  if (idx >= 0) rooms[idx] = stamped;
+  else rooms.unshift(stamped);
   const trimmed = rooms.slice(0, 40);
   writeLocalRooms(trimmed);
+
+  // Persister dans public.referrals (autorisé en INSERT et SELECT pour TOUS les utilisateurs du site)
+  try {
+    await supabase.from("referrals").insert({
+      referrer_id: "QB_ROOM",
+      invitee_device: JSON.stringify({
+        ...stamped,
+        _uid: `${stamped.code}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      }),
+    });
+  } catch {
+    // ignore
+  }
+
   try {
     await supabase.from("app_settings").upsert({
       key: SETTINGS_ROOMS_KEY,
@@ -916,6 +1108,7 @@ export async function saveDuelRoom(room: DuelRoom): Promise<DuelRoom> {
   } catch {
     // ignore
   }
+
   try {
     const ch = supabase.channel("quizboss-duel-lobby");
     ch.subscribe((status) => {
@@ -923,7 +1116,7 @@ export async function saveDuelRoom(room: DuelRoom): Promise<DuelRoom> {
         ch.send({
           type: "broadcast",
           event: "room-updated",
-          payload: { room },
+          payload: { room: stamped },
         }).finally(() => {
           setTimeout(() => supabase.removeChannel(ch), 600);
         });
@@ -932,5 +1125,209 @@ export async function saveDuelRoom(room: DuelRoom): Promise<DuelRoom> {
   } catch {
     // ignore
   }
-  return room;
+  return stamped;
+}
+
+/* ---------- Notifications Système Cross-Platform (Android, iOS, Windows, Mac) ---------- */
+
+export function registerNotificationServiceWorker() {
+  if (typeof window === "undefined" || !("serviceWorker" in navigator)) return;
+  navigator.serviceWorker.register("/sw.js").catch(() => {});
+}
+
+export async function requestCrossPlatformNotificationPermission(): Promise<boolean> {
+  if (typeof window === "undefined" || typeof Notification === "undefined") return false;
+  registerNotificationServiceWorker();
+  if (Notification.permission === "granted") return true;
+  const res = await Notification.requestPermission();
+  return res === "granted";
+}
+
+export async function triggerCrossPlatformNotification(
+  title: string,
+  body: string,
+  url = "/",
+  tag?: string,
+) {
+  if (typeof window === "undefined" || typeof Notification === "undefined") return;
+  if (Notification.permission !== "granted") return;
+
+  try {
+    if ("serviceWorker" in navigator) {
+      const reg = await navigator.serviceWorker.getRegistration();
+      if (reg && "showNotification" in reg) {
+        await reg.showNotification(title, {
+          body,
+          icon: "/icon-192.png",
+          badge: "/icon-192.png",
+          tag: tag || `qb-${Date.now()}`,
+          data: { url },
+        });
+        return;
+      }
+    }
+  } catch {
+    // fallback to standard Notification constructor
+  }
+
+  try {
+    const notif = new Notification(title, {
+      body,
+      icon: "/icon-192.png",
+      tag: tag || `qb-${Date.now()}`,
+    });
+    notif.onclick = () => {
+      window.focus();
+      if (url) window.location.href = url;
+    };
+  } catch {
+    // ignore
+  }
+}
+
+/* ---------- Widget Support en Direct (User <-> Admin temps réel) ---------- */
+
+export type SupportMessage = {
+  id: string;
+  threadId: string; // player.id
+  playerName: string;
+  contact?: string;
+  sender: "user" | "admin";
+  text: string;
+  createdAt: string;
+};
+
+const LOCAL_SUPPORT_KEY = "quizboss-support-msgs-v1";
+const SETTINGS_SUPPORT_KEY = "support_messages_json";
+
+function readLocalSupportMessages(): SupportMessage[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(LOCAL_SUPPORT_KEY);
+    return raw ? (JSON.parse(raw) as SupportMessage[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeLocalSupportMessages(list: SupportMessage[]) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(LOCAL_SUPPORT_KEY, JSON.stringify(list.slice(-300)));
+  } catch {
+    // ignore
+  }
+}
+
+export async function fetchSupportMessages(): Promise<SupportMessage[]> {
+  const map = new Map<string, SupportMessage>();
+  for (const m of readLocalSupportMessages()) {
+    if (m?.id) map.set(m.id, m);
+  }
+
+  try {
+    const { data: refRows } = await supabase
+      .from("referrals")
+      .select("invitee_device, created_at")
+      .eq("referrer_id", "QB_SUPPORT")
+      .order("created_at", { ascending: false })
+      .limit(200);
+    for (const row of refRows ?? []) {
+      try {
+        const parsed = JSON.parse(row.invitee_device) as SupportMessage;
+        if (parsed?.id && parsed?.threadId && parsed?.text) {
+          map.set(parsed.id, parsed);
+        }
+      } catch {
+        // ignore
+      }
+    }
+  } catch {
+    // ignore
+  }
+
+  try {
+    const { data } = await supabase
+      .from("app_settings")
+      .select("value")
+      .eq("key", SETTINGS_SUPPORT_KEY)
+      .maybeSingle();
+    if (data?.value) {
+      for (const m of JSON.parse(data.value) as SupportMessage[]) {
+        if (m?.id) map.set(m.id, m);
+      }
+    }
+  } catch {
+    // ignore
+  }
+
+  const sorted = Array.from(map.values()).sort((a, b) => (a.createdAt > b.createdAt ? 1 : -1));
+  writeLocalSupportMessages(sorted);
+  return sorted;
+}
+
+export async function sendSupportMessage(input: {
+  threadId: string;
+  playerName: string;
+  contact?: string;
+  sender: "user" | "admin";
+  text: string;
+}): Promise<SupportMessage> {
+  const msg: SupportMessage = {
+    id:
+      typeof crypto !== "undefined" && "randomUUID" in crypto
+        ? crypto.randomUUID()
+        : `sup-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+    threadId: input.threadId,
+    playerName: input.playerName.trim() || `Joueur_${input.threadId.slice(0, 4)}`,
+    contact: input.contact?.trim() || undefined,
+    sender: input.sender,
+    text: input.text.trim(),
+    createdAt: new Date().toISOString(),
+  };
+
+  const current = await fetchSupportMessages();
+  const next = [...current, msg].slice(-250);
+  writeLocalSupportMessages(next);
+
+  // 1. Insérer dans public.referrals (accessible en lecture/écriture pour le joueur ET l'admin)
+  try {
+    await supabase.from("referrals").insert({
+      referrer_id: "QB_SUPPORT",
+      invitee_device: JSON.stringify(msg),
+    });
+  } catch {
+    // ignore
+  }
+
+  // 2. Sauvegarder aussi dans app_settings si Admin
+  try {
+    await supabase.from("app_settings").upsert({
+      key: SETTINGS_SUPPORT_KEY,
+      value: JSON.stringify(next),
+      updated_at: new Date().toISOString(),
+    });
+  } catch {
+    // ignore
+  }
+
+  // 3. Diffuser en temps réel via Supabase Broadcast
+  try {
+    const ch = supabase.channel("quizboss-support");
+    ch.subscribe((status) => {
+      if (status === "SUBSCRIBED") {
+        ch.send({
+          type: "broadcast",
+          event: "support-msg",
+          payload: { message: msg },
+        }).finally(() => {
+          setTimeout(() => supabase.removeChannel(ch), 600);
+        });
+      }
+    });
+  } catch {
+    // ignore
+  }
+
+  return msg;
 }

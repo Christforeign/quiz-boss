@@ -10,28 +10,49 @@ import {
   Coins,
   Swords,
   UserRound,
-  MessageCircle,
-  Megaphone,
   X,
   Music,
   Pause,
   Play,
+  SkipForward,
+  Bell,
+  BellRing,
+  VolumeX,
 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { addCoins, getPlayer, levelFromXp, usePlayer, useAuthSync, useSession } from "@/lib/player";
 import {
+  calculateDuelPot,
   fetchDeposits,
   injectSmartSnippet,
+  listDuelRooms,
+  registerNotificationServiceWorker,
   registerPlayerInDirectory,
+  requestCrossPlatformNotificationPermission,
   setRealtimePresencePlayers,
+  triggerCrossPlatformNotification,
   usePages,
   useSettings,
+  type DuelRoom,
   type RegisteredPlayer,
 } from "@/lib/site";
-import { toggleSiteMusic, useIsGameActive, useSiteBgm, useSiteMusicPlaying } from "@/lib/sound";
+import {
+  nextSiteMusicTrack,
+  sfx,
+  toggleSiteMusic,
+  toggleSiteMusicDisabled,
+  useCurrentSiteTrack,
+  useIsGameActive,
+  useSiteBgm,
+  useSiteMusicDisabled,
+  useSiteMusicPlaying,
+} from "@/lib/sound";
 import { NotificationPrompt } from "./NotificationPrompt";
 import { MuteButton } from "./MuteButton";
+import { SupportWidget } from "./SupportWidget";
+import { PlayerAvatar } from "./PlayerAvatar";
+import { Button } from "./ui/button";
 
 const NAV = [
   { to: "/", label: "Jouer", icon: Home },
@@ -42,6 +63,14 @@ const NAV = [
   { to: "/explorer", label: "Explorer", icon: Globe },
   { to: "/invite", label: "Inviter", icon: UserPlus },
 ] as const;
+
+type SiteNotifItem = {
+  id: string;
+  title: string;
+  body: string;
+  url: string | null;
+  created_at: string;
+};
 
 function useReferralCapture() {
   useEffect(() => {
@@ -54,33 +83,6 @@ function useReferralCapture() {
       .then(() => {
         // Referral recorded for bonus duels & XP
       });
-  }, []);
-}
-
-function useNotificationPoller() {
-  useEffect(() => {
-    const check = async () => {
-      if (typeof Notification === "undefined" || Notification.permission !== "granted") return;
-      const { data } = await supabase
-        .from("notifications")
-        .select("*")
-        .order("created_at", { ascending: false })
-        .limit(1);
-      const n = data?.[0];
-      if (!n) return;
-      const last = localStorage.getItem("quizboss-last-notif");
-      if (last === n.id) return;
-      localStorage.setItem("quizboss-last-notif", n.id);
-      if (!last) return; // don't replay old ones on first subscribe
-      const notif = new Notification(n.title, { body: n.body, icon: "/icon-192.png" });
-      notif.onclick = () => {
-        window.focus();
-        if (n.url) window.location.href = n.url;
-      };
-    };
-    check();
-    const t = setInterval(check, 60000);
-    return () => clearInterval(t);
   }, []);
 }
 
@@ -106,6 +108,12 @@ function useDepositCreditSync() {
             () => ({ creditedDeposits: Array.from(credited) }),
           );
           toast.success(`🎉 Dépôt de +${dep.amount} GDS validé et crédité sur ton portefeuille !`);
+          triggerCrossPlatformNotification(
+            "🎉 Dépôt validé !",
+            `+${dep.amount} GDS ont été crédités sur ton portefeuille QuizBoss.`,
+            "/portefeuille",
+            `dep-${dep.id}`,
+          );
         }
       }
     };
@@ -143,20 +151,222 @@ function useRealtimeAdminSync() {
   }, [qc]);
 }
 
-function useGlobalPresenceSync() {
+function SiteMusicBar() {
+  const { data: settings } = useSettings();
+  const isPlaying = useSiteMusicPlaying();
+  const isDisabled = useSiteMusicDisabled();
+  const track = useCurrentSiteTrack();
+  const songUrl = settings?.["site_bgm_url"]?.trim();
+  const songCredit = settings?.["site_bgm_credit"]?.trim();
+
+  useSiteBgm(songUrl, songCredit);
+
+  return (
+    <div className="mx-auto mb-2 px-4">
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-primary/25 bg-card/90 px-3 py-1.5 text-xs backdrop-blur-md">
+        <div className="flex items-center gap-2 min-w-0 flex-1">
+          <button
+            type="button"
+            onClick={() => {
+              sfx.click();
+              toggleSiteMusic();
+            }}
+            title={isPlaying ? "Poser la musique" : "Lire la musique"}
+            aria-label={isPlaying ? "Mettre la musique en pause" : "Écouter la musique"}
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground transition-transform active:scale-90"
+          >
+            {isPlaying ? <Pause className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5" />}
+          </button>
+          <Music
+            className={`h-3.5 w-3.5 shrink-0 text-primary ${isPlaying ? "animate-spin" : ""}`}
+          />
+          <div className="min-w-0 truncate">
+            <span className="font-extrabold text-foreground">
+              {isDisabled ? "Musique désactivée" : track.title}
+            </span>
+            {!isDisabled && (
+              <span className="ml-1.5 text-[10px] text-muted-foreground">· {track.credit}</span>
+            )}
+          </div>
+        </div>
+
+        <div className="flex items-center gap-1 shrink-0">
+          <button
+            type="button"
+            onClick={() => {
+              sfx.click();
+              toggleSiteMusic();
+            }}
+            className="rounded-lg bg-muted px-2 py-1 text-[10px] font-bold hover:bg-muted/80"
+          >
+            {isPlaying ? "⏸ Poser" : "▶ Lire"}
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              sfx.click();
+              nextSiteMusicTrack();
+            }}
+            title="Changer de son / musique"
+            className="inline-flex items-center gap-1 rounded-lg bg-primary/15 px-2 py-1 text-[10px] font-bold text-primary hover:bg-primary/25"
+          >
+            <SkipForward className="h-3 w-3" /> Changer
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              sfx.click();
+              toggleSiteMusicDisabled();
+            }}
+            title={isDisabled ? "Réactiver la musique" : "Désactiver la musique"}
+            className={`inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[10px] font-bold ${
+              isDisabled
+                ? "bg-accent/20 text-accent"
+                : "bg-destructive/15 text-destructive hover:bg-destructive/25"
+            }`}
+          >
+            <VolumeX className="h-3 w-3" /> {isDisabled ? "Activer" : "Off"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function AppShell({ children }: { children: React.ReactNode }) {
   const player = usePlayer();
   const navigate = useNavigate();
+  const path = useRouterState({ select: (s) => s.location.pathname });
+  const inGame = useIsGameActive();
 
+  useReferralCapture();
+  useAuthSync();
+  useDepositCreditSync();
+  useRealtimeAdminSync();
+  useInjectedScripts();
+
+  const session = useSession();
+  const isAdmin = path.startsWith("/admin");
+
+  const [openRooms, setOpenRooms] = useState<DuelRoom[]>([]);
+  const [siteNotifs, setSiteNotifs] = useState<SiteNotifItem[]>([]);
+  const [notifDrawerOpen, setNotifDrawerOpen] = useState(false);
+  const [dismissedRoomCodes, setDismissedRoomCodes] = useState<string[]>([]);
+  const [notifPerm, setNotifPerm] = useState<NotificationPermission>(
+    typeof Notification !== "undefined" ? Notification.permission : "default",
+  );
+
+  const myPseudo = player.name?.trim() || `Joueur_${player.id.slice(0, 4)}`;
+
+  // Synchronisation globale : Présence, Défis Duel dans toute l'App, et Notifications OS (Android, iOS, Windows, Mac)
   useEffect(() => {
+    registerNotificationServiceWorker();
     if (!player.id) return;
-    const myPseudo = player.name?.trim() || `Joueur_${player.id.slice(0, 4)}`;
-    if (player.name?.trim()) {
+
+    if (player.name?.trim() || player.avatarUrl) {
       registerPlayerInDirectory({
         id: player.id,
-        pseudo: player.name.trim(),
+        pseudo: myPseudo,
         level: levelFromXp(player.xp),
+        avatarUrl: player.avatarUrl,
       });
     }
+
+    const seenChallengeRooms = new Set<string>(
+      JSON.parse(localStorage.getItem("quizboss-seen-duel-notifs") || "[]") as string[],
+    );
+
+    const markRoomNotified = (code: string) => {
+      seenChallengeRooms.add(code);
+      localStorage.setItem(
+        "quizboss-seen-duel-notifs",
+        JSON.stringify(Array.from(seenChallengeRooms).slice(-100)),
+      );
+    };
+
+    const syncGlobalRoomsAndNotifs = async () => {
+      const rooms = await listDuelRooms();
+      const waitingOthers = rooms.filter(
+        (r) =>
+          r.status === "waiting" &&
+          r.hostId !== player.id &&
+          r.players.length < r.maxPlayers &&
+          (r.visibility === "public" ||
+            r.targetPseudo?.toLowerCase() === myPseudo.toLowerCase() ||
+            r.invitedPseudos?.some((ip) => ip.toLowerCase() === myPseudo.toLowerCase())),
+      );
+      setOpenRooms(waitingOthers);
+
+      // Si un défi vient d'être lancé (pour moi ou en chambre ouverte), envoyer une notification Android/iOS/Windows/Mac
+      for (const r of waitingOthers) {
+        if (!seenChallengeRooms.has(r.code)) {
+          markRoomNotified(r.code);
+          const isDirectForMe =
+            r.targetPseudo?.toLowerCase() === myPseudo.toLowerCase() ||
+            r.invitedPseudos?.some((ip) => ip.toLowerCase() === myPseudo.toLowerCase());
+          const pot = calculateDuelPot(r.stake, r.maxPlayers);
+          sfx.buzz();
+          triggerCrossPlatformNotification(
+            isDirectForMe
+              ? `⚔️ ${r.hostName} te défie en Duel !`
+              : `🔥 Défi Duel lancé par ${r.hostName}`,
+            r.stake > 0
+              ? `Mise : ${r.stake} GDS · Gagne ${pot.winnerPayout} GDS (${r.maxPlayers} joueurs)`
+              : `Partie Multijoueur Gratuite (${r.maxPlayers} joueurs) · Clique pour rejoindre !`,
+            `/duel?room=${r.code}&accept=1`,
+            `duel-${r.code}`,
+          );
+        }
+      }
+
+      // Si j'ai moi-même créé une chambre et qu'un joueur a accepté (status === "playing") pendant que je suis sur une autre page, lancer automatiquement !
+      if (!inGame && !path.startsWith("/duel")) {
+        const myStartedRoom = rooms.find(
+          (r) =>
+            r.hostId === player.id &&
+            r.status === "playing" &&
+            r.players.length >= 2 &&
+            Date.now() - new Date(r.updatedAt || r.createdAt).getTime() < 45000,
+        );
+        if (myStartedRoom && !seenChallengeRooms.has(`started-${myStartedRoom.code}`)) {
+          markRoomNotified(`started-${myStartedRoom.code}`);
+          sfx.start();
+          toast.success(`⚔️ Ton défi ${myStartedRoom.code} a été accepté ! Le duel commence !`);
+          navigate({
+            to: "/duel",
+            search: { room: myStartedRoom.code, accept: "1" } as never,
+          });
+        }
+      }
+
+      // Notifications générales du site (table notifications)
+      const { data: nRows } = await supabase
+        .from("notifications")
+        .select("*")
+        .order("created_at", { ascending: false })
+        .limit(12);
+      if (nRows) {
+        setSiteNotifs(nRows);
+        const latest = nRows[0];
+        if (latest) {
+          const lastId = localStorage.getItem("quizboss-last-notif");
+          if (lastId !== latest.id) {
+            localStorage.setItem("quizboss-last-notif", latest.id);
+            if (lastId) {
+              triggerCrossPlatformNotification(
+                latest.title,
+                latest.body,
+                latest.url || "/",
+                `notif-${latest.id}`,
+              );
+            }
+          }
+        }
+      }
+    };
+
+    syncGlobalRoomsAndNotifs();
+    const poll = setInterval(syncGlobalRoomsAndNotifs, 3500);
 
     const ch = supabase.channel("quizboss-duel-lobby", {
       config: { presence: { key: player.id } },
@@ -166,6 +376,7 @@ function useGlobalPresenceSync() {
       const state = ch.presenceState<{
         id: string;
         pseudo: string;
+        avatarUrl?: string;
         level: number;
         updatedAt: string;
       }>();
@@ -176,6 +387,7 @@ function useGlobalPresenceSync() {
             onlineList.push({
               id: item.id,
               pseudo: item.pseudo,
+              avatarUrl: item.avatarUrl,
               level: item.level || 1,
               online: true,
               updatedAt: item.updatedAt || new Date().toISOString(),
@@ -185,29 +397,52 @@ function useGlobalPresenceSync() {
       }
       setRealtimePresencePlayers(onlineList);
     })
+      .on("broadcast", { event: "room-updated" }, () => {
+        syncGlobalRoomsAndNotifs();
+      })
       .on("broadcast", { event: "duel-challenge" }, ({ payload }) => {
-        if (!payload) return;
-        const isForMe =
+        syncGlobalRoomsAndNotifs();
+        if (!payload || payload.hostId === player.id) return;
+        const isDirect =
           payload.targetId === player.id ||
           (payload.targetPseudo && payload.targetPseudo.toLowerCase() === myPseudo.toLowerCase());
-        if (isForMe && payload.hostId !== player.id) {
-          toast(`⚔️ ${payload.hostName} te défie en Duel (${payload.stake} GDS) !`, {
-            description: `Chambre ${payload.roomCode} · ${payload.maxPlayers} joueurs`,
-            duration: 12000,
+        const pot = calculateDuelPot(payload.stake || 0, payload.maxPlayers || 2);
+        sfx.buzz();
+        triggerCrossPlatformNotification(
+          isDirect
+            ? `⚔️ ${payload.hostName} te défie en Duel !`
+            : `🔥 Nouveau Défi Duel de ${payload.hostName} !`,
+          payload.stake > 0
+            ? `Mise : ${payload.stake} GDS · Gain : ${pot.winnerPayout} GDS`
+            : `Partie Multijoueur Gratuite (${payload.maxPlayers} joueurs)`,
+          `/duel?room=${payload.roomCode}&accept=1`,
+          `duel-${payload.roomCode}`,
+        );
+        toast(
+          isDirect
+            ? `⚔️ ${payload.hostName} te défie en Duel (${payload.stake} GDS) !`
+            : `🔥 ${payload.hostName} a lancé un défi Duel (${payload.stake} GDS) !`,
+          {
+            description: `Chambre ${payload.roomCode} · ${payload.maxPlayers} joueurs · Clique sur Accepter pour lancer le jeu !`,
+            duration: 14000,
             action: {
-              label: "Rejoindre",
+              label: "⚡ Accepter",
               onClick: () => {
-                navigate({ to: "/duel", search: { room: payload.roomCode } as never });
+                navigate({
+                  to: "/duel",
+                  search: { room: payload.roomCode, accept: "1" } as never,
+                });
               },
             },
-          });
-        }
+          },
+        );
       })
       .subscribe(async (status) => {
         if (status === "SUBSCRIBED") {
           await ch.track({
             id: player.id,
             pseudo: myPseudo,
+            avatarUrl: player.avatarUrl,
             level: levelFromXp(player.xp),
             updatedAt: new Date().toISOString(),
           });
@@ -215,67 +450,33 @@ function useGlobalPresenceSync() {
       });
 
     return () => {
+      clearInterval(poll);
       supabase.removeChannel(ch);
     };
-  }, [player.id, player.name, player.xp, navigate]);
-}
+  }, [player.id, player.name, player.avatarUrl, player.xp, myPseudo, inGame, path, navigate]);
 
-function SiteMusicBar() {
-  const { data: settings } = useSettings();
-  const inGame = useIsGameActive();
-  const isPlaying = useSiteMusicPlaying();
-  const songUrl = settings?.["site_bgm_url"]?.trim();
-  const songCredit = settings?.["site_bgm_credit"]?.trim();
+  const visibleChallenges = openRooms.filter((r) => !dismissedRoomCodes.includes(r.code));
+  const totalBadgeCount = visibleChallenges.length + (siteNotifs.length > 0 ? 1 : 0);
 
-  useSiteBgm(songUrl);
-
-  if (!songUrl || inGame) return null;
-
-  return (
-    <div className="mx-auto mb-2 px-4">
-      <div className="flex items-center justify-between gap-2 rounded-2xl border border-primary/25 bg-card/85 px-3 py-1.5 text-xs backdrop-blur-md">
-        <div className="flex items-center gap-2 min-w-0">
-          <button
-            type="button"
-            onClick={toggleSiteMusic}
-            aria-label={isPlaying ? "Mettre la musique en pause" : "Écouter la musique du site"}
-            className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground transition-transform active:scale-90"
-          >
-            {isPlaying ? <Pause className="h-3 w-3" /> : <Play className="h-3 w-3" />}
-          </button>
-          <Music
-            className={`h-3.5 w-3.5 shrink-0 text-primary ${isPlaying ? "animate-spin" : ""}`}
-          />
-          <span className="truncate font-semibold text-muted-foreground">
-            {songCredit ? (
-              <>
-                <b className="text-foreground">{songCredit}</b>
-              </>
-            ) : (
-              "Ambiance musicale QuizBoss"
-            )}
-          </span>
-        </div>
-        <span className="shrink-0 text-[10px] font-bold text-primary">
-          {isPlaying ? "En écoute" : "Cliquer ▶"}
-        </span>
-      </div>
-    </div>
-  );
-}
-
-export function AppShell({ children }: { children: React.ReactNode }) {
-  const player = usePlayer();
-  const path = useRouterState({ select: (s) => s.location.pathname });
-  useReferralCapture();
-  useNotificationPoller();
-  useAuthSync();
-  useDepositCreditSync();
-  useRealtimeAdminSync();
-  useGlobalPresenceSync();
-  useInjectedScripts();
-  const session = useSession();
-  const isAdmin = path.startsWith("/admin");
+  const handleEnableOsNotifications = async () => {
+    const ok = await requestCrossPlatformNotificationPermission();
+    setNotifPerm(typeof Notification !== "undefined" ? Notification.permission : "default");
+    if (ok) {
+      try {
+        await supabase.from("push_subscribers").insert({ device_id: player.id });
+      } catch {
+        // ignore
+      }
+      toast.success("Notifications activées pour Android, iOS, Windows & Mac 🔔");
+      triggerCrossPlatformNotification(
+        "🔔 Notifications QuizBoss actives !",
+        "Tu recevras désormais tous les défis Duel et alertes en direct sur ton appareil.",
+        "/duel",
+      );
+    } else {
+      toast.error("Autorise les notifications dans les réglages de ton navigateur.");
+    }
+  };
 
   return (
     <div className="mx-auto min-h-screen max-w-2xl pb-28">
@@ -299,24 +500,216 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <span className="rounded-full bg-primary/15 px-2.5 py-1 text-xs text-primary">
               Niv. {levelFromXp(player.xp)}
             </span>
+
+            {/* Bouton Centre de Notifications & Défis */}
+            <button
+              type="button"
+              onClick={() => {
+                sfx.click();
+                setNotifDrawerOpen((v) => !v);
+              }}
+              aria-label="Notifications et Défis"
+              title="Notifications & Défis Duel"
+              className="relative flex h-8 w-8 items-center justify-center rounded-full bg-primary/15 text-primary transition-transform active:scale-90"
+            >
+              {visibleChallenges.length > 0 ? (
+                <BellRing className="h-4 w-4 animate-bounce text-accent" />
+              ) : (
+                <Bell className="h-4 w-4" />
+              )}
+              {totalBadgeCount > 0 && (
+                <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[9px] font-extrabold text-destructive-foreground">
+                  {visibleChallenges.length > 0 ? visibleChallenges.length : "•"}
+                </span>
+              )}
+            </button>
+
             <MuteButton />
             <Link
               to="/auth"
-              aria-label="Mon compte"
-              className={`flex h-8 w-8 items-center justify-center rounded-full ${
+              aria-label="Mon profil et compte"
+              title="Modifier mon nom, ma photo de profil et mon compte"
+              className={`flex h-8 w-8 items-center justify-center overflow-hidden rounded-full ${
                 session ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
               }`}
             >
-              <UserRound className="h-4 w-4" />
+              {player.avatarUrl ? (
+                <PlayerAvatar name={myPseudo} avatarUrl={player.avatarUrl} size="sm" />
+              ) : (
+                <UserRound className="h-4 w-4" />
+              )}
             </Link>
           </div>
         )}
       </header>
+
+      {/* Tiroir / Centre de Notifications (Android, iOS, Windows, Mac + Défis en direct) */}
+      {!isAdmin && notifDrawerOpen && (
+        <div className="mx-4 mb-3 rounded-3xl border border-primary/30 bg-card p-4 shadow-2xl animate-pop">
+          <div className="flex items-center justify-between border-b border-border pb-2.5">
+            <div className="flex items-center gap-2">
+              <BellRing className="h-4 w-4 text-primary" />
+              <h3 className="text-sm font-extrabold">Notifications & Défis en direct</h3>
+            </div>
+            <button
+              type="button"
+              onClick={() => setNotifDrawerOpen(false)}
+              className="rounded-full p-1 text-muted-foreground hover:text-foreground"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+
+          {/* Option d'activation Notifications OS (Android, iOS, Windows, Mac) */}
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-2xl bg-muted/60 p-3 text-xs">
+            <div>
+              <p className="font-extrabold">
+                📱 Notifications Android, iOS, Windows & Mac :{" "}
+                <span className={notifPerm === "granted" ? "text-success" : "text-accent"}>
+                  {notifPerm === "granted" ? "Activées ✅" : "Non activées"}
+                </span>
+              </p>
+              <p className="text-[11px] text-muted-foreground">
+                Reçois une alerte directe sur ton téléphone ou PC dès qu'un joueur te défie.
+              </p>
+            </div>
+            {notifPerm !== "granted" && (
+              <Button size="sm" onClick={handleEnableOsNotifications}>
+                Activer 🔔
+              </Button>
+            )}
+          </div>
+
+          {/* Défis Duel en attente */}
+          <div className="mt-3 space-y-2">
+            <p className="text-[11px] font-extrabold uppercase tracking-wider text-muted-foreground">
+              ⚔️ Défis Duel actifs ({openRooms.length})
+            </p>
+            {openRooms.length === 0 ? (
+              <p className="rounded-xl bg-background/40 p-2.5 text-xs text-muted-foreground">
+                Aucun défi en attente pour le moment. Lance un défi dans l'onglet Duel !
+              </p>
+            ) : (
+              openRooms.slice(0, 5).map((r) => {
+                const pot = calculateDuelPot(r.stake, r.maxPlayers);
+                const isForMe =
+                  r.targetPseudo?.toLowerCase() === myPseudo.toLowerCase() ||
+                  r.invitedPseudos?.some((ip) => ip.toLowerCase() === myPseudo.toLowerCase());
+                return (
+                  <div
+                    key={r.code}
+                    className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-primary/30 bg-primary/10 p-3 text-xs"
+                  >
+                    <div>
+                      <p className="font-extrabold text-foreground">
+                        {isForMe
+                          ? `⚔️ ${r.hostName} te défie personnellement !`
+                          : `🔥 Défi ouvert par ${r.hostName}`}{" "}
+                        <span className="font-mono text-primary">({r.code})</span>
+                      </p>
+                      <p className="text-[11px] text-muted-foreground">
+                        {r.players.length}/{r.maxPlayers} joueurs ·{" "}
+                        {r.stake === 0
+                          ? "🎁 Partie Gratuite"
+                          : `Mise ${r.stake} GDS → Gain ${pot.winnerPayout} GDS`}
+                      </p>
+                    </div>
+                    <Button
+                      size="sm"
+                      onClick={() => {
+                        setNotifDrawerOpen(false);
+                        navigate({
+                          to: "/duel",
+                          search: { room: r.code, accept: "1" } as never,
+                        });
+                      }}
+                    >
+                      ⚡ Accepter ({r.stake} GDS)
+                    </Button>
+                  </div>
+                );
+              })
+            )}
+          </div>
+
+          {/* Dernières annonces du site */}
+          {siteNotifs.length > 0 && (
+            <div className="mt-3 space-y-1.5 border-t border-border pt-2.5">
+              <p className="text-[11px] font-extrabold uppercase tracking-wider text-muted-foreground">
+                📢 Annonces QuizBoss
+              </p>
+              {siteNotifs.slice(0, 3).map((n) => (
+                <div key={n.id} className="rounded-xl bg-background/50 p-2.5 text-xs">
+                  <p className="font-bold">{n.title}</p>
+                  <p className="text-muted-foreground">{n.body}</p>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {!isAdmin && <SiteMusicBar />}
       {!isAdmin && <NotificationPrompt />}
+
+      {/* Bannière globale en direct quand un joueur lance un défi Duel (visible dans toute l'App) */}
+      {!isAdmin && !inGame && visibleChallenges.length > 0 && (
+        <div className="mx-4 mb-3 space-y-2">
+          {visibleChallenges.slice(0, 2).map((r) => {
+            const pot = calculateDuelPot(r.stake, r.maxPlayers);
+            const isDirect =
+              r.targetPseudo?.toLowerCase() === myPseudo.toLowerCase() ||
+              r.invitedPseudos?.some((ip) => ip.toLowerCase() === myPseudo.toLowerCase());
+            return (
+              <div
+                key={r.code}
+                className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border-2 border-accent bg-grad-candy p-3.5 text-xs text-secondary-foreground shadow-lg animate-pop"
+              >
+                <div className="min-w-0 flex-1">
+                  <p className="flex items-center gap-1.5 text-sm font-extrabold">
+                    <Swords className="h-4 w-4 shrink-0" />
+                    {isDirect
+                      ? `${r.hostName} te défie en Duel !`
+                      : `${r.hostName} a lancé un Défi Duel (${r.players.length}/${r.maxPlayers} joueurs)`}
+                  </p>
+                  <p className="mt-0.5 text-[11px] font-semibold opacity-95">
+                    {r.stake === 0
+                      ? `🎁 Partie Gratuite · Chambre ${r.code}`
+                      : `Mise : ${r.stake} GDS chacun · Le gagnant remporte ${pot.winnerPayout} GDS !`}
+                  </p>
+                </div>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <Button
+                    size="sm"
+                    onClick={() => {
+                      sfx.click();
+                      navigate({
+                        to: "/duel",
+                        search: { room: r.code, accept: "1" } as never,
+                      });
+                    }}
+                    className="bg-background font-extrabold text-foreground hover:bg-background/90"
+                  >
+                    ⚡ Accepter {r.stake > 0 ? `(${r.stake} GDS)` : ""}
+                  </Button>
+                  <button
+                    type="button"
+                    aria-label="Ignorer ce défi"
+                    onClick={() => setDismissedRoomCodes((prev) => [...prev, r.code])}
+                    className="rounded-full bg-background/20 p-1.5 hover:bg-background/30"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
       <main className="px-4">{children}</main>
       {!isAdmin && <Footer />}
-      {!isAdmin && <WhatsAppFab />}
+      {!isAdmin && <SupportWidget />}
       {!isAdmin && (
         <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-card/90 backdrop-blur-lg">
           <div className="mx-auto flex max-w-2xl justify-around px-1 py-2">
@@ -344,14 +737,12 @@ function useInjectedScripts() {
   const inGame = useIsGameActive();
 
   useEffect(() => {
-    // Supprimer l'ancien script Monetag All-in-One (quge5.com / zone 228397)
     document
       .querySelectorAll('script[src*="quge5.com"], script[data-zone="228397"]')
       .forEach((el) => el.remove());
 
     if (!data) return;
 
-    // 1. Jeton de validation <meta name="monetag">
     const monetagToken = data["monetag_meta"]?.trim() || "59029dc25ef25e3de878e23f259217d6";
     let metaEl = document.querySelector('meta[name="monetag"]') as HTMLMetaElement | null;
     if (!metaEl) {
@@ -361,7 +752,6 @@ function useInjectedScripts() {
     }
     metaEl.content = monetagToken;
 
-    // 2. Fonction Pub 2 : In-Page Push (In-Push) — non-intrusive
     const inpageEnabled = (data["monetag_inpage_enabled"] ?? "true") !== "false";
     const inpageScript = data["monetag_inpage_script"]?.trim();
     if (inpageEnabled && inpageScript && !inGame) {
@@ -372,7 +762,6 @@ function useInjectedScripts() {
       );
     }
 
-    // 3. Fonction Pub 1 : Vignette Banner — uniquement hors partie active pour ne jamais gêner les boutons de quiz/duel
     const vignetteEnabled = (data["monetag_vignette_enabled"] ?? "true") !== "false";
     const vignetteZone = data["monetag_vignette_zone"]?.trim() || "11987279";
     if (vignetteEnabled && vignetteZone && !inGame) {
@@ -383,7 +772,6 @@ function useInjectedScripts() {
       );
     }
 
-    // 4. Google AdSense (si configuré)
     const client = data["adsense_client"]?.trim();
     if (client && !document.getElementById("adsense-loader")) {
       const sc = document.createElement("script");
@@ -394,7 +782,6 @@ function useInjectedScripts() {
       document.head.appendChild(sc);
     }
 
-    // 5. Code <head> libre (URL, lien, <meta>, <script>, HTML ou JS)
     const html = data["head_script"]?.trim();
     if (html) {
       injectSmartSnippet(html, "custom-head-script");
@@ -426,48 +813,5 @@ function Footer() {
         Conditions d'utilisation
       </Link>
     </footer>
-  );
-}
-
-function WhatsAppFab() {
-  const { data } = useSettings();
-  const [open, setOpen] = useState(false);
-  const support = data?.["whatsapp_support"]?.replace(/\D/g, "");
-  const channel = data?.["whatsapp_channel"]?.trim();
-  if (!support && !channel) return null;
-  return (
-    <div className="fixed bottom-24 right-4 z-40 flex flex-col items-end gap-2">
-      {open && (
-        <div className="flex flex-col gap-2 animate-pop">
-          {support && (
-            <a
-              href={`https://wa.me/${support}`}
-              target="_blank"
-              rel="noreferrer"
-              className="flex items-center gap-2 rounded-full bg-card px-4 py-2 text-sm font-semibold shadow-lg"
-            >
-              <MessageCircle className="h-4 w-4 text-success" /> Support
-            </a>
-          )}
-          {channel && (
-            <a
-              href={channel}
-              target="_blank"
-              rel="noreferrer"
-              className="flex items-center gap-2 rounded-full bg-card px-4 py-2 text-sm font-semibold shadow-lg"
-            >
-              <Megaphone className="h-4 w-4 text-success" /> Chaîne officielle
-            </a>
-          )}
-        </div>
-      )}
-      <button
-        aria-label="WhatsApp"
-        onClick={() => setOpen(!open)}
-        className="flex h-14 w-14 items-center justify-center rounded-full bg-success text-primary-foreground shadow-xl transition-transform active:scale-90"
-      >
-        {open ? <X className="h-6 w-6" /> : <MessageCircle className="h-6 w-6" />}
-      </button>
-    </div>
   );
 }

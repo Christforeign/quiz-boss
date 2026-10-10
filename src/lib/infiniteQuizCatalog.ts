@@ -284,9 +284,9 @@ const HISTORICAL_EVENTS: Array<[string, string, string, number]> = [
   ["Fondation de Google par Larry Page et Sergey Brin", "1998", "Histoire de la Tech", 3],
 ];
 
-export const TOTAL_CATALOG_COUNT = 12480;
+export const TOTAL_CATALOG_COUNT = 15800;
 
-const SEEN_STORAGE_KEY = "quizboss-seen-qids-v1";
+const SEEN_STORAGE_KEY = "quizboss-seen-qids-v2";
 
 function getSeenIds(): Set<string> {
   if (typeof window === "undefined") return new Set();
@@ -303,11 +303,26 @@ export function markQuestionsSeen(ids: string[]) {
   try {
     const seen = getSeenIds();
     for (const id of ids) seen.add(id);
-    const arr = Array.from(seen).slice(-1500);
+    const arr = Array.from(seen).slice(-3000);
     window.localStorage.setItem(SEEN_STORAGE_KEY, JSON.stringify(arr));
   } catch {
     // ignore
   }
+}
+
+function randomShuffle<T>(items: T[]): T[] {
+  const arr = [...items];
+  for (let i = arr.length - 1; i > 0; i--) {
+    let r = Math.random();
+    if (typeof crypto !== "undefined" && "getRandomValues" in crypto) {
+      const buf = new Uint32Array(1);
+      crypto.getRandomValues(buf);
+      r = (buf[0] ?? 0) / 0x100000000;
+    }
+    const j = Math.floor(r * (i + 1));
+    [arr[i], arr[j]] = [arr[j] as T, arr[i] as T];
+  }
+  return arr;
 }
 
 function pickDistractors(correct: string, pool: string[], seed: number): string[] {
@@ -638,23 +653,380 @@ export function buildProceduralQuestions(category: string, count = 120): QuizQue
     }
   }
 
+  // 6. Sport & Football
+  if (category === "sport" || category === "mix") {
+    const SPORT_FACTS: Array<[string, string, string[], number]> = [
+      [
+        "Qui détient le record du plus grand nombre de Ballons d'Or remportés ?",
+        "Lionel Messi (8 Ballons d'Or)",
+        ["Cristiano Ronaldo", "Michel Platini", "Johan Cruyff"],
+        1,
+      ],
+      [
+        "Quel pays a remporté la première Coupe du Monde de football en 1930 ?",
+        "Uruguay",
+        ["Argentine", "Brésil", "Italie"],
+        2,
+      ],
+      [
+        "Combien de joueurs composent une équipe de basket-ball sur le parquet ?",
+        "5 joueurs",
+        ["6 joueurs", "7 joueurs", "11 joueurs"],
+        1,
+      ],
+      [
+        "Quel joueur détient le record du plus grand nombre de points inscrits en carrière NBA ?",
+        "LeBron James",
+        ["Kareem Abdul-Jabbar", "Michael Jordan", "Kobe Bryant"],
+        2,
+      ],
+      [
+        "Dans quelle ville se sont déroulés les Jeux Olympiques d'été de 2024 ?",
+        "Paris",
+        ["Tokyo", "Los Angeles", "Londres"],
+        1,
+      ],
+      [
+        "Quelle sélection nationale est surnommée « Les Grenadiers » dans la Caraïbe ?",
+        "Haïti",
+        ["Jamaïque", "Trinité-et-Tobago", "Martinique"],
+        1,
+      ],
+      [
+        "Quel stade mythique est le domicile du FC Barcelone ?",
+        "Camp Nou",
+        ["Santiago Bernabéu", "Wanda Metropolitano", "San Siro"],
+        1,
+      ],
+      [
+        "Combien de tournois composent le Grand Chelem de tennis ?",
+        "4 tournois",
+        ["3 tournois", "5 tournois", "6 tournois"],
+        2,
+      ],
+      [
+        "Sur quelle surface se joue le tournoi de Roland-Garros ?",
+        "Terre battue",
+        ["Gazon", "Dur (Synthétique)", "Moquette"],
+        2,
+      ],
+      [
+        "Quel pays africain a atteint les demi-finales de la Coupe du Monde 2022 au Qatar ?",
+        "Maroc",
+        ["Sénégal", "Cameroun", "Ghana"],
+        1,
+      ],
+      [
+        "Quel combattant MMA haïtien-américain a combattu en UFC dans la catégorie mi-lourds ?",
+        "Ovince Saint Preux",
+        ["Francis Ngannou", "Jon Jones", "Israel Adesanya"],
+        4,
+      ],
+      [
+        "En quelle année la sélection féminine d'Haïti s'est-elle qualifiée pour sa première Coupe du Monde de la FIFA ?",
+        "2023",
+        ["2019", "2015", "2021"],
+        2,
+      ],
+    ];
+    SPORT_FACTS.forEach(([qText, correct, wrongs, diff], i) => {
+      results.push({
+        id: `cat-sport-${i}`,
+        category: "sport",
+        question: qText,
+        options: [correct, ...wrongs],
+        correct_index: 0,
+        lang: "fr",
+        image_url: null,
+        difficulty: diff,
+      });
+    });
+  }
+
+  // 7. Histoire & Haïti
+  if (category === "histoire" || category === "mix") {
+    const histYears = Array.from(new Set(HISTORICAL_EVENTS.map((h) => h[1])));
+    const histNames = HISTORICAL_EVENTS.map((h) => h[0]);
+    HISTORICAL_EVENTS.forEach(([ev, yr, domain, diff], i) => {
+      results.push({
+        id: `cat-his-yr-${i}`,
+        category: "histoire",
+        question: `[${domain}] En quelle année a eu lieu : « ${ev} » ?`,
+        options: pickDistractors(yr, histYears, i * 17),
+        correct_index: 0,
+        lang: "fr",
+        image_url: null,
+        difficulty: diff,
+      });
+      results.push({
+        id: `cat-his-ev-${i}`,
+        category: "histoire",
+        question: `Quel événement historique majeur s'est produit en ${yr} (${domain}) ?`,
+        options: pickDistractors(ev, histNames, i * 23),
+        correct_index: 0,
+        lang: "fr",
+        image_url: null,
+        difficulty: Math.min(6, diff + 1),
+      });
+    });
+  }
+
+  // 8. Sciences & Nature
+  if (category === "sciences" || category === "mix") {
+    const symbols = ELEMENTS.map((e) => e[1]);
+    const elNames = ELEMENTS.map((e) => e[0]);
+    const atomicNums = ELEMENTS.map((e) => String(e[2]));
+    ELEMENTS.forEach(([name, sym, num, diff], i) => {
+      results.push({
+        id: `cat-sci-sym-${i}`,
+        category: "sciences",
+        question: `Quel est le symbole chimique de l'élément « ${name} » ?`,
+        options: pickDistractors(sym, symbols, i * 13),
+        correct_index: 0,
+        lang: "fr",
+        image_url: null,
+        difficulty: diff,
+      });
+      results.push({
+        id: `cat-sci-num-${i}`,
+        category: "sciences",
+        question: `Quel est le numéro atomique de l'élément ${name} (${sym}) ?`,
+        options: pickDistractors(String(num), atomicNums, i * 29),
+        correct_index: 0,
+        lang: "fr",
+        image_url: null,
+        difficulty: Math.min(6, diff + 2),
+      });
+      results.push({
+        id: `cat-sci-el-${i}`,
+        category: "sciences",
+        question: `Quel élément chimique correspond au symbole « ${sym} » ?`,
+        options: pickDistractors(name, elNames, i * 19),
+        correct_index: 0,
+        lang: "fr",
+        image_url: null,
+        difficulty: diff,
+      });
+    });
+  }
+
+  // 9. Logique & Maths
+  if (category === "logique" || category === "mix") {
+    for (let a = 6; a <= 25; a++) {
+      const b = a + 4;
+      const ans = a * b;
+      results.push({
+        id: `cat-log-mult-${a}`,
+        category: "logique",
+        question: `Calcul rapide : combien font ${a} × ${b} ?`,
+        options: [String(ans), String(ans + a), String(ans - b), String(ans + 10)],
+        correct_index: 0,
+        lang: "fr",
+        image_url: null,
+        difficulty: a > 15 ? 4 : 2,
+      });
+      const seq1 = a * 2;
+      const seq2 = seq1 + 5;
+      const seq3 = seq2 * 2;
+      const seq4 = seq3 + 5;
+      results.push({
+        id: `cat-log-seq-${a}`,
+        category: "logique",
+        question: `Trouve le nombre suivant de la suite logique : ${a}, ${seq1}, ${seq2}, ${seq3}, … ?`,
+        options: [String(seq4), String(seq3 * 2), String(seq4 + 2), String(seq4 - 3)],
+        correct_index: 0,
+        lang: "fr",
+        image_url: null,
+        difficulty: a > 14 ? 5 : 3,
+      });
+    }
+  }
+
+  // 10. Bible & Spiritualité
+  if (category === "bible" || category === "mix") {
+    const BIBLE_QA: Array<[string, string, string[], number]> = [
+      [
+        "Quel est le tout premier livre de la Bible ?",
+        "La Genèse",
+        ["L'Exode", "Le Lévitique", "Les Psaumes"],
+        1,
+      ],
+      [
+        "Quel est le dernier livre du Nouveau Testament ?",
+        "L'Apocalypse",
+        ["L'Épître de Jude", "Les Actes des Apôtres", "L'Évangile de Jean"],
+        1,
+      ],
+      [
+        "Dans quelle ville Jésus est-il né selon les Évangiles ?",
+        "Bethléem",
+        ["Nazareth", "Jérusalem", "Capharnaüm"],
+        1,
+      ],
+      [
+        "Qui a construit l'arche avant le déluge dans le livre de la Genèse ?",
+        "Noé",
+        ["Abraham", "Moïse", "Élie"],
+        1,
+      ],
+      [
+        "Qui a vaincu le géant Goliath avec une fronde et une pierre ?",
+        "David",
+        ["Saül", "Jonathan", "Samson"],
+        1,
+      ],
+      [
+        "Combien de plaies Dieu a-t-il envoyées sur l'Égypte avant la sortie des Hébreux ?",
+        "10 plaies",
+        ["7 plaies", "12 plaies", "5 plaies"],
+        2,
+      ],
+      [
+        "Sur quelle montagne Moïse a-t-il reçu les Dix Commandements ?",
+        "Le mont Sinaï",
+        ["Le mont des Oliviers", "Le mont Carmel", "Le mont Ararat"],
+        2,
+      ],
+      [
+        "Qui a été jeté dans la fosse aux lions sous le règne du roi Darius ?",
+        "Daniel",
+        ["Jérémie", "Ézéchiel", "Joseph"],
+        2,
+      ],
+      [
+        "Quel apôtre a renié Jésus trois fois avant le chant du coq ?",
+        "Pierre",
+        ["Thomas", "André", "Jean"],
+        2,
+      ],
+      [
+        "Quel était le métier de Matthieu (Lévi) avant de suivre Jésus ?",
+        "Collecteur d'impôts (Publicain)",
+        ["Pêcheur", "Charpentier", "Médecin"],
+        3,
+      ],
+      [
+        "Quel auteur du Nouveau Testament était médecin de profession ?",
+        "Luc",
+        ["Marc", "Paul", "Barnabé"],
+        3,
+      ],
+      [
+        "Quel est le plus court verset de la Bible (« Jésus pleura ») ?",
+        "Jean 11:35",
+        ["Psaume 23:1", "Genèse 1:1", "Matthieu 5:3"],
+        4,
+      ],
+    ];
+    BIBLE_QA.forEach(([qText, correct, wrongs, diff], i) => {
+      results.push({
+        id: `cat-bib-${i}`,
+        category: "bible",
+        question: qText,
+        options: [correct, ...wrongs],
+        correct_index: 0,
+        lang: "fr",
+        image_url: null,
+        difficulty: diff,
+      });
+    });
+  }
+
+  // 11. Anglais & Langues
+  if (category === "anglais" || category === "mix") {
+    const ENG_QA: Array<[string, string, string[], number]> = [
+      [
+        "Quelle est la traduction exacte en anglais du mot « Connaissance / Savoir » ?",
+        "Knowledge",
+        ["Knowingly", "Science", "Wisdom"],
+        1,
+      ],
+      [
+        "Quel est le pluriel irrégulier du nom anglais « Child » ?",
+        "Children",
+        ["Childs", "Childrens", "Childes"],
+        1,
+      ],
+      [
+        "Quel est le pluriel irrégulier du nom anglais « Mouse » (souris) ?",
+        "Mice",
+        ["Mouses", "Mices", "Meese"],
+        2,
+      ],
+      [
+        "Quelle est la forme au Past Participle (participe passé) de « to write » ?",
+        "Written",
+        ["Wrote", "Writed", "Writing"],
+        2,
+      ],
+      [
+        "Que signifie le phrasal verb anglais « To give up » ?",
+        "Abandonner / Renoncer",
+        ["Donner en haut", "Se lever tôt", "Pardonner"],
+        2,
+      ],
+      [
+        "Que signifie le phrasal verb anglais « To look forward to » ?",
+        "Avoir hâte de",
+        ["Regarder derrière", "Chercher partout", "Faire attention à"],
+        3,
+      ],
+      [
+        "Quel est l'antonyme (contraire) du mot anglais « Wealthy » (riche) ?",
+        "Poor / Impoverished",
+        ["Healthy", "Strong", "Lucky"],
+        3,
+      ],
+      [
+        "Complète : « If I ___ rich, I would travel around the world. »",
+        "were",
+        ["am", "will be", "have been"],
+        3,
+      ],
+      [
+        "Que signifie l'expression anglaise « Once in a blue moon » ?",
+        "Très rarement (tous les 36 du mois)",
+        ["Chaque soir de pleine lune", "Une fois par mois", "Toujours"],
+        4,
+      ],
+      [
+        "Quel mot anglais signifie « Cependant / Toutefois » ?",
+        "However",
+        ["Therefore", "Moreover", "Otherwise"],
+        3,
+      ],
+    ];
+    ENG_QA.forEach(([qText, correct, wrongs, diff], i) => {
+      results.push({
+        id: `cat-ang-${i}`,
+        category: "anglais",
+        question: qText,
+        options: [correct, ...wrongs],
+        correct_index: 0,
+        lang: "fr",
+        image_url: null,
+        difficulty: diff,
+      });
+    });
+  }
+
   return results.slice(0, Math.max(count, results.length));
 }
 
 /**
- * Sélectionne les meilleures questions non encore vues parmi la base Supabase + le catalogue +12 000 Quiz.
+ * Sélectionne les meilleures questions non encore vues parmi la base Supabase + le catalogue +15 800 Quiz.
  */
 export function selectCatalogQuestions(
   dbQuestions: QuizQuestion[],
   category: string,
   minDifficulty = 1,
 ): QuizQuestion[] {
-  const procedural = buildProceduralQuestions(category, 400);
+  const procedural = buildProceduralQuestions(category, 600);
   const hard = HARD_QUESTIONS.filter((q) => category === "mix" || q.category === category);
   const seenQuestions = new Set<string>();
   const combined: QuizQuestion[] = [];
 
-  for (const q of [...dbQuestions, ...hard, ...procedural]) {
+  for (const q of randomShuffle([...dbQuestions, ...hard, ...procedural])) {
     const key = q.question.trim().toLowerCase();
     if (!seenQuestions.has(key)) {
       seenQuestions.add(key);
@@ -664,11 +1036,16 @@ export function selectCatalogQuestions(
 
   const seenIds = getSeenIds();
   const filteredByDiff = combined.filter((q) => (q.difficulty ?? 1) >= minDifficulty);
-  const pool = filteredByDiff.length >= 20 ? filteredByDiff : combined;
+  const pool = filteredByDiff.length >= 16 ? filteredByDiff : combined;
 
-  // Prioritize questions the player hasn't seen recently
-  const unseen = pool.filter((q) => !seenIds.has(q.id));
-  return unseen.length >= 15 ? unseen : pool;
+  // Prioritize questions the player hasn't seen recently (by ID or question text)
+  const unseen = pool.filter(
+    (q) => !seenIds.has(q.id) && !seenIds.has(q.question.trim().toLowerCase()),
+  );
+  if (unseen.length >= 12) {
+    return randomShuffle(unseen);
+  }
+  return randomShuffle(pool);
 }
 
 /**

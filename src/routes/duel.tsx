@@ -19,10 +19,12 @@ import {
   Gift,
   BellRing,
   AlertCircle,
+  Pencil,
 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { CATEGORIES, shareWhatsApp } from "@/lib/categories";
+import { PlayerAvatar, PlayerProfileEditor } from "@/components/PlayerAvatar";
 import {
   addCoins,
   consumeDuel,
@@ -31,7 +33,6 @@ import {
   levelFromXp,
   SHARE_DUEL_BONUS,
   unlockDuelsByShare,
-  updatePlayer,
   usePlayer,
 } from "@/lib/player";
 import {
@@ -56,16 +57,16 @@ import { markQuestionsSeen, selectCatalogQuestions } from "@/lib/infiniteQuizCat
 export const Route = createFileRoute("/duel")({
   head: () => ({
     meta: [
-      { title: "Duel Multijoueur (2 à 4 vrais joueurs) — QuizBoss" },
+      { title: "Duel Multijoueur (2 à 4 joueurs) — QuizBoss" },
       {
         name: "description",
         content:
-          "Affronte 2 à 4 vrais joueurs en duel quiz ! Clique sur le buzzer pour répondre. Mise 25 GDS chacun, le gagnant remporte 45 GDS.",
+          "Affronte 2 à 4 joueurs en duel quiz ! Clique sur le buzzer pour répondre. Mise 25 GDS chacun, le gagnant remporte 45 GDS.",
       },
       { property: "og:title", content: "Duel Multijoueur GDS — QuizBoss" },
       {
         property: "og:description",
-        content: "Duel en temps réel entre vrais joueurs du site · 2 à 4 joueurs.",
+        content: "Duel en temps réel entre joueurs disponibles · 2 à 4 joueurs.",
       },
     ],
   }),
@@ -75,6 +76,7 @@ export const Route = createFileRoute("/duel")({
 type Mode = "online" | "buzzer" | "tour";
 type Setup = {
   names: string[];
+  avatars?: (string | undefined)[];
   playerIds?: string[];
   myPlayerIndex: number;
   mode: Mode;
@@ -172,7 +174,6 @@ function SetupScreen({ onStart }: { onStart: (s: Setup) => void }) {
   const [customStake, setCustomStake] = useState("");
   const [category, setCategory] = useState("mix");
 
-  // Salons en ligne & Annuaire des VRAIS utilisateurs uniquement
   const [rooms, setRooms] = useState<DuelRoom[]>([]);
   const [activeRoom, setActiveRoom] = useState<DuelRoom | null>(null);
   const [joinCodeInput, setJoinCodeInput] = useState("");
@@ -180,6 +181,8 @@ function SetupScreen({ onStart }: { onStart: (s: Setup) => void }) {
   const [playerSearch, setPlayerSearch] = useState("");
   const [selectedRivals, setSelectedRivals] = useState<string[]>([]);
   const [startingRoom, setStartingRoom] = useState(false);
+  const [showQuickProfileEdit, setShowQuickProfileEdit] = useState(false);
+  const autoAcceptedRef = useRef<string | null>(null);
 
   const left = duelsLeft(p);
   const pot = calculateDuelPot(stake, n);
@@ -192,19 +195,28 @@ function SetupScreen({ onStart }: { onStart: (s: Setup) => void }) {
       setRegisteredPlayers(pList);
     };
     refreshLobby();
-    const interval = setInterval(refreshLobby, 4000);
+    const interval = setInterval(refreshLobby, 3000);
 
-    if (p.name?.trim()) {
+    if (p.name?.trim() || p.avatarUrl) {
       registerPlayerInDirectory({
         id: p.id,
-        pseudo: p.name.trim(),
+        pseudo: p.name?.trim() || myDisplayName,
         level: levelFromXp(p.xp),
+        avatarUrl: p.avatarUrl,
       });
     }
+
     const params = new URLSearchParams(window.location.search);
     const rCode = params.get("room")?.toUpperCase();
+    const shouldAutoAccept = params.get("accept") === "1";
     if (rCode) {
       setJoinCodeInput(rCode);
+      if (shouldAutoAccept && autoAcceptedRef.current !== rCode) {
+        autoAcceptedRef.current = rCode;
+        setTimeout(() => {
+          handleJoinRoom(rCode);
+        }, 250);
+      }
     }
 
     const ch = supabase
@@ -218,36 +230,56 @@ function SetupScreen({ onStart }: { onStart: (s: Setup) => void }) {
       clearInterval(interval);
       supabase.removeChannel(ch);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [p.id, p.name, p.xp]);
 
-  // Synchronisation en temps réel de la chambre active (aucun bot, uniquement vrais joueurs)
+  // Synchronisation en temps réel de la chambre active : dès que le défi est accepté ou la chambre pleine, BOOM le jeu commence !
   useEffect(() => {
     if (!activeRoom) return;
+    let launched = false;
+
+    const launchFromRoom = async (startedRoom: DuelRoom, incomingQuestions?: QuizQuestion[]) => {
+      if (launched) return;
+      launched = true;
+      const myIdx = Math.max(
+        0,
+        startedRoom.players.findIndex((pl) => pl.id === p.id || pl.name === myDisplayName),
+      );
+      const preset =
+        incomingQuestions && incomingQuestions.length >= 3
+          ? incomingQuestions
+          : startedRoom.questions && startedRoom.questions.length >= 3
+            ? (startedRoom.questions as QuizQuestion[])
+            : await buildDuelQuestions(startedRoom.category, startedRoom.stake, 10);
+      setActiveRoom(null);
+      onStart({
+        names: startedRoom.players.map((pl) => pl.name),
+        avatars: startedRoom.players.map((pl) => pl.avatarUrl),
+        playerIds: startedRoom.players.map((pl) => pl.id),
+        myPlayerIndex: myIdx,
+        mode: "online",
+        stake: startedRoom.stake,
+        category: startedRoom.category,
+        roomCode: startedRoom.code,
+        presetQuestions: preset,
+      });
+    };
+
     const roomChannel = supabase
       .channel(`quizboss-room-${activeRoom.code}`)
       .on("broadcast", { event: "room-sync" }, ({ payload }) => {
         if (payload?.room) {
-          setActiveRoom(payload.room as DuelRoom);
+          const r = payload.room as DuelRoom;
+          setActiveRoom(r);
+          if (r.status === "playing" && r.players.length >= 2) {
+            launchFromRoom(r, r.questions as QuizQuestion[] | undefined);
+          }
         }
       })
       .on("broadcast", { event: "room-start" }, ({ payload }) => {
         if (!payload?.room) return;
         const startedRoom = payload.room as DuelRoom;
-        const myIdx = Math.max(
-          0,
-          startedRoom.players.findIndex((pl) => pl.id === p.id || pl.name === myDisplayName),
-        );
-        setActiveRoom(null);
-        onStart({
-          names: startedRoom.players.map((pl) => pl.name),
-          playerIds: startedRoom.players.map((pl) => pl.id),
-          myPlayerIndex: myIdx,
-          mode: "online",
-          stake: startedRoom.stake,
-          category: startedRoom.category,
-          roomCode: startedRoom.code,
-          presetQuestions: payload.questions as QuizQuestion[] | undefined,
-        });
+        launchFromRoom(startedRoom, payload.questions as QuizQuestion[] | undefined);
       })
       .subscribe();
 
@@ -258,23 +290,10 @@ function SetupScreen({ onStart }: { onStart: (s: Setup) => void }) {
         setActiveRoom(found);
         if (found.status === "playing" && found.players.length >= 2) {
           clearInterval(pollTimer);
-          const myIdx = Math.max(
-            0,
-            found.players.findIndex((pl) => pl.id === p.id || pl.name === myDisplayName),
-          );
-          setActiveRoom(null);
-          onStart({
-            names: found.players.map((pl) => pl.name),
-            playerIds: found.players.map((pl) => pl.id),
-            myPlayerIndex: myIdx,
-            mode: "online",
-            stake: found.stake,
-            category: found.category,
-            roomCode: found.code,
-          });
+          launchFromRoom(found, found.questions as QuizQuestion[] | undefined);
         }
       }
-    }, 2000);
+    }, 1800);
 
     return () => {
       clearInterval(pollTimer);
@@ -282,19 +301,6 @@ function SetupScreen({ onStart }: { onStart: (s: Setup) => void }) {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeRoom?.code, p.id, myDisplayName]);
-
-  async function saveMyPseudo(newPseudo: string) {
-    setNames([newPseudo, names[1] ?? "", names[2] ?? "", names[3] ?? ""]);
-    if (newPseudo.trim().length >= 2) {
-      updatePlayer(() => ({ name: newPseudo.trim() }));
-      await registerPlayerInDirectory({
-        id: p.id,
-        pseudo: newPseudo.trim(),
-        level: levelFromXp(p.xp),
-      });
-      setRegisteredPlayers(await fetchAllRegisteredPlayers());
-    }
-  }
 
   async function handleCreateRoom(visibility: "public" | "private", targetPseudo?: string) {
     if (stake === 0 && left <= 0) {
@@ -313,58 +319,73 @@ function SetupScreen({ onStart }: { onStart: (s: Setup) => void }) {
       ? Array.from(new Set([targetPseudo, ...selectedRivals]))
       : selectedRivals;
 
+    // Si on défie directement 1 joueur, c'est un 1v1 (2 joueurs) sauf si plus d'invités ont été sélectionnés
+    const targetMaxPlayers = targetPseudo && selectedRivals.length === 0 ? 2 : n;
+    const presetQs = await buildDuelQuestions(category, stake, 10);
+
     const room: DuelRoom = {
       code,
       hostId: p.id,
       hostName: myDisplayName,
+      hostAvatar: p.avatarUrl,
       category,
       stake,
-      maxPlayers: n,
+      maxPlayers: targetMaxPlayers,
       visibility,
+      targetPseudo: targetPseudo || undefined,
       invitedPseudos: invited,
       status: "waiting",
-      players: [{ id: p.id, name: myDisplayName, score: 0, finished: false }],
-      questionIds: [],
+      players: [
+        {
+          id: p.id,
+          name: myDisplayName,
+          avatarUrl: p.avatarUrl,
+          score: 0,
+          finished: false,
+        },
+      ],
+      questionIds: presetQs.map((q) => q.id),
+      questions: presetQs,
       createdAt: new Date().toISOString(),
     };
     await saveDuelRoom(room);
     setActiveRoom(room);
     setRooms(await listDuelRooms());
 
-    // Envoyer une invitation en direct aux vrais joueurs ciblés
-    if (invited.length > 0) {
-      try {
-        const ch = supabase.channel("quizboss-duel-lobby");
-        ch.subscribe((status) => {
-          if (status === "SUBSCRIBED") {
-            invited.forEach((pseudo) => {
-              ch.send({
-                type: "broadcast",
-                event: "duel-challenge",
-                payload: {
-                  roomCode: code,
-                  hostId: p.id,
-                  hostName: myDisplayName,
-                  targetPseudo: pseudo,
-                  stake,
-                  maxPlayers: n,
-                },
-              });
+    // Diffuser l'alerte de défi en direct à toute l'application
+    try {
+      const ch = supabase.channel("quizboss-duel-lobby");
+      ch.subscribe((status) => {
+        if (status === "SUBSCRIBED") {
+          const targets = invited.length > 0 ? invited : [""];
+          targets.forEach((pseudo) => {
+            ch.send({
+              type: "broadcast",
+              event: "duel-challenge",
+              payload: {
+                roomCode: code,
+                hostId: p.id,
+                hostName: myDisplayName,
+                targetPseudo: pseudo || undefined,
+                stake,
+                maxPlayers: targetMaxPlayers,
+                visibility,
+              },
             });
-            setTimeout(() => supabase.removeChannel(ch), 800);
-          }
-        });
-      } catch {
-        // ignore
-      }
+          });
+          setTimeout(() => supabase.removeChannel(ch), 800);
+        }
+      });
+    } catch {
+      // ignore
     }
 
     toast.success(
       targetPseudo
-        ? `Défi envoyé à ${targetPseudo} ! En attente qu'il/elle rejoigne la chambre ${code}.`
+        ? `⚔️ Défi envoyé à ${targetPseudo} (${stake} GDS) ! Dès qu'il accepte, le duel démarre automatiquement.`
         : visibility === "public"
-          ? `Chambre libre ${code} ouverte aux vrais joueurs du site !`
-          : `Chambre privée ${code} créée ! Partage le code à tes amis.`,
+          ? `🔥 Chambre Ouverte ${code} (${targetMaxPlayers} joueurs · ${stake} GDS/joueur) publiée dans l'App de tous les joueurs !`
+          : `🔒 Chambre Privée ${code} (${targetMaxPlayers} joueurs · ${stake} GDS/joueur) créée ! Partage le code.`,
     );
   }
 
@@ -373,60 +394,141 @@ function SetupScreen({ onStart }: { onStart: (s: Setup) => void }) {
     if (!code) return void toast.error("Entre un code de chambre");
     const list = await listDuelRooms();
     const room = list.find((r) => r.code === code);
-    if (!room) return void toast.error("Chambre introuvable");
+    if (!room) return void toast.error("Chambre introuvable ou expirée");
+
+    // Si la chambre est déjà en cours et que j'en fais partie (ex: Hôte redirigé), lancer immédiatement !
+    if (room.status === "playing" && room.players.some((pl) => pl.id === p.id)) {
+      const myIdx = Math.max(
+        0,
+        room.players.findIndex((pl) => pl.id === p.id || pl.name === myDisplayName),
+      );
+      const qs =
+        room.questions && room.questions.length >= 3
+          ? (room.questions as QuizQuestion[])
+          : await buildDuelQuestions(room.category, room.stake, 10);
+      setActiveRoom(null);
+      onStart({
+        names: room.players.map((pl) => pl.name),
+        avatars: room.players.map((pl) => pl.avatarUrl),
+        playerIds: room.players.map((pl) => pl.id),
+        myPlayerIndex: myIdx,
+        mode: "online",
+        stake: room.stake,
+        category: room.category,
+        roomCode: room.code,
+        presetQuestions: qs,
+      });
+      return;
+    }
+
+    // Chaque joueur doit miser exactement le montant fixé par celui qui a lancé la chambre
     if (room.stake === 0 && left <= 0) {
       return void toast.error("Partie gratuite déjà utilisée aujourd'hui.");
     }
     if (room.stake > p.coins) {
-      return void toast.error(`Cette chambre demande une mise de ${room.stake} GDS.`);
+      return void toast.error(
+        `Ce défi demande une mise de ${room.stake} GDS (solde actuel : ${p.coins} GDS). Dépose dans ton Wallet !`,
+      );
     }
-    if (!room.players.some((pl) => pl.id === p.id)) {
-      if (room.players.length >= room.maxPlayers) {
+
+    const updatedPlayers = [...room.players];
+    if (!updatedPlayers.some((pl) => pl.id === p.id)) {
+      if (updatedPlayers.length >= room.maxPlayers) {
         return void toast.error("Cette chambre est déjà complète");
       }
-      room.players.push({ id: p.id, name: myDisplayName, score: 0, finished: false });
-      await saveDuelRoom(room);
-
-      try {
-        const roomChannel = supabase.channel(`quizboss-room-${room.code}`);
-        roomChannel.subscribe((status) => {
-          if (status === "SUBSCRIBED") {
-            roomChannel
-              .send({
-                type: "broadcast",
-                event: "room-sync",
-                payload: { room },
-              })
-              .finally(() => {
-                setTimeout(() => supabase.removeChannel(roomChannel), 600);
-              });
-          }
-        });
-      } catch {
-        // ignore
-      }
+      updatedPlayers.push({
+        id: p.id,
+        name: myDisplayName,
+        avatarUrl: p.avatarUrl,
+        score: 0,
+        finished: false,
+      });
     }
-    setN(room.maxPlayers);
-    setStake(room.stake);
-    setCategory(room.category);
-    setActiveRoom({ ...room });
-    toast.success(`Tu as rejoint la chambre ${code} avec ${room.hostName} !`);
+
+    const isNowFull = updatedPlayers.length >= room.maxPlayers;
+    const qs =
+      room.questions && room.questions.length >= 3
+        ? (room.questions as QuizQuestion[])
+        : await buildDuelQuestions(room.category, room.stake, 10);
+
+    const updatedRoom: DuelRoom = {
+      ...room,
+      players: updatedPlayers,
+      status: isNowFull ? "playing" : room.status,
+      questionIds: qs.map((q) => q.id),
+      questions: qs,
+    };
+
+    await saveDuelRoom(updatedRoom);
+
+    try {
+      const roomChannel = supabase.channel(`quizboss-room-${updatedRoom.code}`);
+      roomChannel.subscribe((status) => {
+        if (status === "SUBSCRIBED") {
+          roomChannel
+            .send({
+              type: "broadcast",
+              event: isNowFull ? "room-start" : "room-sync",
+              payload: { room: updatedRoom, questions: qs },
+            })
+            .finally(() => {
+              setTimeout(() => supabase.removeChannel(roomChannel), 700);
+            });
+        }
+      });
+    } catch {
+      // ignore
+    }
+
+    // BOOM : Si le joueur accepte un défi 1v1 (ou complète la chambre 2..4 joueurs), le jeu commence immédiatement !
+    if (isNowFull && updatedPlayers.length >= 2) {
+      const myIdx = Math.max(
+        0,
+        updatedPlayers.findIndex((pl) => pl.id === p.id || pl.name === myDisplayName),
+      );
+      toast.success(`⚔️ Défi accepté (${updatedRoom.stake} GDS) ! Le duel commence !`);
+      setActiveRoom(null);
+      onStart({
+        names: updatedPlayers.map((pl) => pl.name),
+        avatars: updatedPlayers.map((pl) => pl.avatarUrl),
+        playerIds: updatedPlayers.map((pl) => pl.id),
+        myPlayerIndex: myIdx,
+        mode: "online",
+        stake: updatedRoom.stake,
+        category: updatedRoom.category,
+        roomCode: updatedRoom.code,
+        presetQuestions: qs,
+      });
+      return;
+    }
+
+    setN(updatedRoom.maxPlayers);
+    setStake(updatedRoom.stake);
+    setCategory(updatedRoom.category);
+    setActiveRoom(updatedRoom);
+    toast.success(
+      `Tu as rejoint la chambre ${code} (${updatedPlayers.length}/${updatedRoom.maxPlayers} joueurs · Mise ${updatedRoom.stake} GDS) !`,
+    );
   }
 
   async function handleStartRealRoom() {
     if (!activeRoom) return;
     if (activeRoom.players.length < 2) {
       return void toast.error(
-        "Il faut au minimum 2 vrais joueurs dans la chambre pour lancer le duel ! Invite un joueur ou attends qu'il rejoigne.",
+        "Il faut au minimum 2 joueurs dans la chambre pour lancer le duel ! Invite un joueur ou attends qu'il rejoigne.",
       );
     }
     setStartingRoom(true);
-    const qs = await buildDuelQuestions(activeRoom.category, activeRoom.stake, 10);
+    const qs =
+      activeRoom.questions && activeRoom.questions.length >= 3
+        ? (activeRoom.questions as QuizQuestion[])
+        : await buildDuelQuestions(activeRoom.category, activeRoom.stake, 10);
     const updated: DuelRoom = {
       ...activeRoom,
       maxPlayers: activeRoom.players.length,
       status: "playing",
       questionIds: qs.map((q) => q.id),
+      questions: qs,
     };
     await saveDuelRoom(updated);
 
@@ -457,6 +559,7 @@ function SetupScreen({ onStart }: { onStart: (s: Setup) => void }) {
     setActiveRoom(null);
     onStart({
       names: updated.players.map((pl) => pl.name),
+      avatars: updated.players.map((pl) => pl.avatarUrl),
       playerIds: updated.players.map((pl) => pl.id),
       myPlayerIndex: myIdx,
       mode: "online",
@@ -489,13 +592,15 @@ function SetupScreen({ onStart }: { onStart: (s: Setup) => void }) {
       rp.pseudo.toLowerCase().includes(playerSearch.trim().toLowerCase()),
   );
 
+  const openWaitingRooms = rooms.filter((r) => r.status === "waiting");
+
   return (
     <div className="space-y-5 py-2 animate-pop">
       {/* Hero Banner */}
       <div className="rounded-3xl bg-grad-candy p-6 text-secondary-foreground shadow-xl">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <span className="inline-flex items-center gap-1.5 rounded-full bg-background/25 px-3 py-1 text-xs font-extrabold uppercase tracking-wider">
-            <Swords className="h-3.5 w-3.5" /> Duel 100% Vrais Joueurs (2 à 4)
+            <Swords className="h-3.5 w-3.5" /> Duel Multijoueur (2 à 4 Joueurs)
           </span>
           <span className="rounded-full bg-background/25 px-3 py-1 text-xs font-extrabold">
             Solde : {p.coins} GDS
@@ -503,9 +608,9 @@ function SetupScreen({ onStart }: { onStart: (s: Setup) => void }) {
         </div>
         <h1 className="mt-3 text-3xl font-extrabold">Duel User vs User</h1>
         <p className="mt-1 text-xs font-semibold opacity-95">
-          Affronte uniquement les <b>vrais joueurs</b> du site ! Dès que la question s'affiche, le
-          joueur qui connaît la réponse <b>clique sur le bouton Buzzer</b> et choisit sa réponse :
-          les autres perdent ! Si aucun joueur ne répond, la manche est <b>nulle</b>.
+          Défie un joueur disponible ou ouvre une chambre (2 à 4 joueurs, ouverte ou privée) ! Dès
+          que la question s'affiche, le joueur qui connaît la réponse <b>clique sur le Buzzer</b> et
+          choisit : les autres perdent ! Si aucun joueur ne répond, la manche est <b>nulle</b>.
         </p>
 
         {/* Partie Multijoueur Gratuite */}
@@ -533,7 +638,7 @@ function SetupScreen({ onStart }: { onStart: (s: Setup) => void }) {
         </div>
       </div>
 
-      {/* Chambre active (Libre ou Privée — attente des vrais joueurs) */}
+      {/* Chambre active (Ouverte ou Privée — attente des joueurs) */}
       {activeRoom && (
         <div className="space-y-4 rounded-3xl border-2 border-primary bg-card p-5 shadow-glow animate-pop">
           <div className="flex items-center justify-between">
@@ -541,23 +646,30 @@ function SetupScreen({ onStart }: { onStart: (s: Setup) => void }) {
               <span className="inline-flex items-center gap-1 text-xs font-bold uppercase tracking-widest text-primary">
                 {activeRoom.visibility === "private" ? (
                   <>
-                    <Lock className="h-3.5 w-3.5" /> Chambre Privée (Vrais joueurs)
+                    <Lock className="h-3.5 w-3.5" /> Chambre Privée ({activeRoom.maxPlayers}{" "}
+                    joueurs)
                   </>
                 ) : (
                   <>
-                    <Unlock className="h-3.5 w-3.5" /> Chambre Libre (Vrais joueurs)
+                    <Unlock className="h-3.5 w-3.5" /> Chambre Ouverte ({activeRoom.maxPlayers}{" "}
+                    joueurs)
                   </>
                 )}
               </span>
               <h2 className="text-2xl font-extrabold">Code : {activeRoom.code}</h2>
+              {activeRoom.targetPseudo && (
+                <p className="text-xs font-bold text-accent">
+                  ⚔️ Défi envoyé à {activeRoom.targetPseudo} — Le jeu démarre dès qu'il accepte !
+                </p>
+              )}
             </div>
             <Button
               size="sm"
               variant="secondary"
               onClick={() => {
-                const url = `${window.location.origin}/duel?room=${activeRoom.code}`;
+                const url = `${window.location.origin}/duel?room=${activeRoom.code}&accept=1`;
                 navigator.clipboard.writeText(url);
-                toast.success("Lien de la chambre copié !");
+                toast.success("Lien d'invitation copié !");
               }}
             >
               <Copy className="h-4 w-4" /> Copier lien
@@ -576,11 +688,15 @@ function SetupScreen({ onStart }: { onStart: (s: Setup) => void }) {
                       : "border-dashed border-border text-muted-foreground animate-pulse"
                   }`}
                 >
-                  <span className="flex h-7 w-7 items-center justify-center rounded-full bg-background text-xs">
-                    {i + 1}
-                  </span>
+                  {pl ? (
+                    <PlayerAvatar name={pl.name} avatarUrl={pl.avatarUrl} size="sm" online={true} />
+                  ) : (
+                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-background text-xs">
+                      {i + 1}
+                    </span>
+                  )}
                   <span className="truncate">
-                    {pl ? `${pl.name} ✓` : "En attente d'un vrai joueur…"}
+                    {pl ? `${pl.name} ✓` : "En attente d'un joueur…"}
                   </span>
                 </div>
               );
@@ -589,15 +705,15 @@ function SetupScreen({ onStart }: { onStart: (s: Setup) => void }) {
 
           <div className="rounded-2xl bg-muted/60 p-3 text-xs space-y-1">
             <div className="flex justify-between">
-              <span>Mise par joueur :</span>
+              <span>Mise obligatoire par joueur :</span>
               <b>
                 {activeRoom.stake === 0 ? "🎁 Partie Gratuite (0 GDS)" : `${activeRoom.stake} GDS`}
               </b>
             </div>
             <div className="flex justify-between">
-              <span>Joueurs connectés dans la chambre :</span>
+              <span>Joueurs prêts dans la chambre :</span>
               <b>
-                {activeRoom.players.length} / {activeRoom.maxPlayers} vrais joueurs
+                {activeRoom.players.length} / {activeRoom.maxPlayers} joueurs
               </b>
             </div>
             {activeRoom.stake > 0 && (
@@ -638,15 +754,15 @@ function SetupScreen({ onStart }: { onStart: (s: Setup) => void }) {
             <Button
               className="bg-success text-primary-foreground hover:bg-success/90"
               onClick={() => {
-                const url = `${window.location.origin}/duel?room=${activeRoom.code}`;
+                const url = `${window.location.origin}/duel?room=${activeRoom.code}&accept=1`;
                 const winPot = calculateDuelPot(
                   activeRoom.stake,
                   activeRoom.maxPlayers,
                 ).winnerPayout;
                 shareWhatsApp(
-                  `⚔️ Rejoins ma chambre Duel sur QuizBoss (Code: ${activeRoom.code}) !\n${
+                  `⚔️ Rejoins mon Défi Duel sur QuizBoss (Code: ${activeRoom.code}) !\n${
                     activeRoom.stake > 0
-                      ? `Mise: ${activeRoom.stake} GDS · Le gagnant remporte ${winPot} GDS 🏆`
+                      ? `Mise: ${activeRoom.stake} GDS chacun · Le gagnant remporte ${winPot} GDS 🏆`
                       : "🎁 Partie Multijoueur Gratuite !"
                   }\n👉 ${url}`,
                 );
@@ -660,7 +776,7 @@ function SetupScreen({ onStart }: { onStart: (s: Setup) => void }) {
             >
               <Play className="h-4 w-4" />
               {activeRoom.players.length < 2
-                ? `Attente joueurs (${activeRoom.players.length}/2 min)`
+                ? `En attente (${activeRoom.players.length}/${activeRoom.maxPlayers})`
                 : startingRoom
                   ? "Lancement…"
                   : `Démarrer (${activeRoom.players.length} joueurs)`}
@@ -674,6 +790,87 @@ function SetupScreen({ onStart }: { onStart: (s: Setup) => void }) {
             Quitter / Fermer la chambre
           </button>
         </div>
+      )}
+
+      {/* Défis & Chambres en direct lancés par les autres joueurs */}
+      {openWaitingRooms.length > 0 && (
+        <section className="space-y-2.5 rounded-3xl border-2 border-accent/50 bg-card p-4 shadow-lg">
+          <div className="flex items-center justify-between">
+            <h2 className="flex items-center gap-2 text-sm font-extrabold text-accent">
+              <BellRing className="h-4 w-4 animate-bounce" /> Défis & Chambres en direct (
+              {openWaitingRooms.length})
+            </h2>
+            <span className="text-[11px] font-bold text-muted-foreground">
+              Clique sur Accepter pour jouer
+            </span>
+          </div>
+          <div className="space-y-2">
+            {openWaitingRooms.slice(0, 6).map((r) => {
+              const rPot = calculateDuelPot(r.stake, r.maxPlayers);
+              const isMine = r.hostId === p.id;
+              const isDirectForMe =
+                r.targetPseudo?.toLowerCase() === myDisplayName.toLowerCase() ||
+                r.invitedPseudos?.some((ip) => ip.toLowerCase() === myDisplayName.toLowerCase());
+              return (
+                <div
+                  key={r.code}
+                  className={`flex flex-wrap items-center justify-between gap-2 rounded-2xl border p-3 text-xs ${
+                    isDirectForMe ? "border-accent bg-accent/15" : "border-border bg-background/50"
+                  }`}
+                >
+                  <div className="flex items-center gap-2.5">
+                    <PlayerAvatar
+                      name={r.hostName}
+                      avatarUrl={r.hostAvatar || r.players[0]?.avatarUrl}
+                      size="sm"
+                      online={true}
+                    />
+                    <div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="inline-flex items-center gap-1 font-mono font-extrabold text-primary">
+                          {r.visibility === "private" ? (
+                            <Lock className="h-3 w-3" />
+                          ) : (
+                            <Unlock className="h-3 w-3" />
+                          )}
+                          {r.code}
+                        </span>
+                        <span>
+                          · Lancé par <b>{r.hostName}</b>
+                        </span>
+                        {isDirectForMe && (
+                          <span className="rounded-full bg-accent px-2 py-0.5 text-[10px] font-extrabold text-accent-foreground">
+                            Te défie !
+                          </span>
+                        )}
+                      </div>
+                      <p className="mt-0.5 text-muted-foreground">
+                        {r.players.length}/{r.maxPlayers} joueurs ·{" "}
+                        {r.stake === 0 ? (
+                          <b className="text-primary">🎁 Partie Gratuite</b>
+                        ) : (
+                          <>
+                            Mise obligatoire : <b>{r.stake} GDS</b> → Gain{" "}
+                            <b className="text-accent">{rPot.winnerPayout} GDS</b>
+                          </>
+                        )}
+                      </p>
+                    </div>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant={isDirectForMe ? "default" : "secondary"}
+                    onClick={() => (isMine ? setActiveRoom(r) : handleJoinRoom(r.code))}
+                  >
+                    {isMine
+                      ? "Ouvrir ma chambre"
+                      : `⚡ Accepter ${r.stake > 0 ? `(${r.stake} GDS)` : ""}`}
+                  </Button>
+                </div>
+              );
+            })}
+          </div>
+        </section>
       )}
 
       {/* 1. Nombre de joueurs : Minimum 2, Maximum 4 */}
@@ -733,7 +930,7 @@ function SetupScreen({ onStart }: { onStart: (s: Setup) => void }) {
 
         <div className="space-y-1">
           <label className="text-xs font-bold text-muted-foreground">
-            Ou saisir une mise manuelle (minimum 25 GDS) :
+            Ou saisir une mise manuelle (minimum 25 GDS — chaque joueur misera ce montant) :
           </label>
           <div className="flex items-center gap-2">
             <Input
@@ -806,9 +1003,9 @@ function SetupScreen({ onStart }: { onStart: (s: Setup) => void }) {
         )}
       </section>
 
-      {/* 3. Mode & Pseudo */}
+      {/* 3. Mode, Nom & Photo de Profil */}
       <section className="space-y-3 rounded-2xl bg-card p-4">
-        <h2 className="font-extrabold">3. Ton Pseudo & Mode de jeu</h2>
+        <h2 className="font-extrabold">3. Ton Nom, Photo de Profil & Mode de jeu</h2>
         <div className="grid grid-cols-3 gap-2">
           <button
             type="button"
@@ -824,7 +1021,7 @@ function SetupScreen({ onStart }: { onStart: (s: Setup) => void }) {
           >
             <Globe className="mb-1 h-4 w-4 text-primary" />
             <b className="block text-xs">En Ligne</b>
-            <p className="text-[10px] text-muted-foreground">Vrais joueurs du site</p>
+            <p className="text-[10px] text-muted-foreground">Joueurs disponibles</p>
           </button>
           <button
             type="button"
@@ -861,14 +1058,12 @@ function SetupScreen({ onStart }: { onStart: (s: Setup) => void }) {
         </div>
 
         {mode === "online" ? (
-          <div className="space-y-2">
-            <Input
-              placeholder="Ton pseudo public (ex: BossHaiti)"
-              value={names[0]}
-              maxLength={20}
-              onChange={(e) => saveMyPseudo(e.target.value)}
-            />
-          </div>
+          <PlayerProfileEditor
+            onSaved={async (newName) => {
+              setNames([newName, names[1] ?? "", names[2] ?? "", names[3] ?? ""]);
+              setRegisteredPlayers(await fetchAllRegisteredPlayers());
+            }}
+          />
         ) : (
           <div className="space-y-2">
             {Array.from({ length: n }).map((_, i) => (
@@ -906,24 +1101,61 @@ function SetupScreen({ onStart }: { onStart: (s: Setup) => void }) {
         </div>
       </section>
 
-      {/* 5. Annuaire des VRAIS Comptes Joueurs (Pseudos) & Chambres Libres / Privées */}
+      {/* 5. Joueurs disponibles & Chambres Ouvertes / Privées */}
       {mode === "online" && (
         <section className="space-y-4 rounded-2xl bg-card p-4">
           <div className="flex items-center justify-between">
             <h2 className="flex items-center gap-2 font-extrabold">
-              <UserCheck className="h-4 w-4 text-primary" /> 5. Vrais Joueurs inscrits & Chambres
+              <UserCheck className="h-4 w-4 text-primary" /> 5. Joueurs disponibles & Chambres
             </h2>
             <span className="rounded-full bg-primary/15 px-2.5 py-0.5 text-xs font-bold text-primary">
-              {otherPlayers.length} vrai{otherPlayers.length > 1 ? "s" : ""} joueur
-              {otherPlayers.length > 1 ? "s" : ""}
+              {otherPlayers.length} joueur{otherPlayers.length > 1 ? "s" : ""} dispo
             </span>
           </div>
+
+          {/* Barre de mon profil visible dans Joueurs disponibles + bouton modifier nom/photo */}
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-primary/25 bg-primary/10 p-2.5 text-xs">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <PlayerAvatar name={myDisplayName} avatarUrl={p.avatarUrl} size="sm" online={true} />
+              <div className="min-w-0">
+                <p className="truncate font-extrabold text-foreground">
+                  Toi : <span className="text-primary">{myDisplayName}</span>
+                </p>
+                <p className="text-[10px] text-muted-foreground">
+                  Visible par les autres joueurs disponibles
+                </p>
+              </div>
+            </div>
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              onClick={() => {
+                sfx.click();
+                setShowQuickProfileEdit((v) => !v);
+              }}
+              className="h-7 px-2.5 text-[11px] font-bold"
+            >
+              <Pencil className="h-3 w-3 text-primary" />
+              {showQuickProfileEdit ? "Fermer" : "Modifier nom & photo"}
+            </Button>
+          </div>
+
+          {showQuickProfileEdit && (
+            <PlayerProfileEditor
+              onSaved={async (newName) => {
+                setNames([newName, names[1] ?? "", names[2] ?? "", names[3] ?? ""]);
+                setRegisteredPlayers(await fetchAllRegisteredPlayers());
+                setShowQuickProfileEdit(false);
+              }}
+            />
+          )}
 
           {/* Barre de recherche de pseudo */}
           <div className="relative">
             <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input
-              placeholder="Rechercher le pseudo d'un vrai joueur du site…"
+              placeholder="Rechercher le pseudo d'un joueur disponible…"
               value={playerSearch}
               onChange={(e) => setPlayerSearch(e.target.value)}
               className="pl-9"
@@ -932,7 +1164,7 @@ function SetupScreen({ onStart }: { onStart: (s: Setup) => void }) {
 
           {selectedRivals.length > 0 && (
             <div className="flex flex-wrap items-center gap-2 rounded-xl bg-primary/10 p-2.5 text-xs">
-              <span className="font-bold text-primary">Joueurs invités :</span>
+              <span className="font-bold text-primary">Joueurs sélectionnés :</span>
               {selectedRivals.map((rv) => (
                 <span
                   key={rv}
@@ -947,19 +1179,17 @@ function SetupScreen({ onStart }: { onStart: (s: Setup) => void }) {
             </div>
           )}
 
-          {/* Liste des VRAIS comptes joueurs uniquement (aucun bot) */}
+          {/* Liste des joueurs disponibles avec leur photo de profil et leur nom */}
           {otherPlayers.length === 0 ? (
             <div className="rounded-2xl border border-dashed border-border bg-background/40 p-4 text-center text-xs text-muted-foreground">
-              <p className="font-bold text-foreground">
-                Aucun autre vrai joueur détecté pour l'instant.
-              </p>
+              <p className="font-bold text-foreground">Aucun joueur disponible pour l'instant.</p>
               <p className="mt-1">
-                Crée une <b>Chambre Libre</b> ou <b>Chambre Privée</b> ci-dessous et partage le lien
-                à tes amis sur WhatsApp pour vous affronter en direct !
+                Lance une <b>Chambre Ouverte</b> ou <b>Chambre Privée</b> ci-dessous : le défi
+                apparaîtra en direct dans l'App de tous les joueurs !
               </p>
             </div>
           ) : (
-            <div className="max-h-56 space-y-2 overflow-y-auto pr-1">
+            <div className="max-h-60 space-y-2 overflow-y-auto pr-1">
               {otherPlayers.map((rp) => {
                 const isSelected = selectedRivals.includes(rp.pseudo);
                 return (
@@ -972,17 +1202,26 @@ function SetupScreen({ onStart }: { onStart: (s: Setup) => void }) {
                     }`}
                   >
                     <div className="flex items-center gap-2.5 min-w-0">
-                      <span
-                        className={`h-2.5 w-2.5 shrink-0 rounded-full ${
-                          rp.online ? "bg-success" : "bg-muted-foreground/50"
-                        }`}
-                        title={rp.online ? "En ligne" : "Hors ligne"}
+                      <PlayerAvatar
+                        name={rp.pseudo}
+                        avatarUrl={rp.avatarUrl}
+                        size="md"
+                        online={Boolean(rp.online)}
                       />
                       <div className="truncate">
                         <b className="text-sm">{rp.pseudo}</b>
-                        <span className="ml-2 rounded-full bg-muted px-2 py-0.5 text-[10px] font-bold text-muted-foreground">
-                          Niv. {rp.level}
-                        </span>
+                        <div className="flex items-center gap-1.5 mt-0.5">
+                          <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-bold text-muted-foreground">
+                            Niv. {rp.level}
+                          </span>
+                          <span
+                            className={`text-[10px] font-semibold ${
+                              rp.online ? "text-success" : "text-muted-foreground"
+                            }`}
+                          >
+                            {rp.online ? "● Dispo" : "○ Récemment"}
+                          </span>
+                        </div>
                       </div>
                     </div>
                     <div className="flex items-center gap-1.5 shrink-0">
@@ -1009,7 +1248,7 @@ function SetupScreen({ onStart }: { onStart: (s: Setup) => void }) {
             </div>
           )}
 
-          {/* Boutons Chambre Libre / Chambre Privée / Rejoindre par code */}
+          {/* Boutons Chambre Ouverte / Chambre Privée / Rejoindre par code */}
           <div className="grid grid-cols-2 gap-2 pt-1">
             <Button
               variant="secondary"
@@ -1017,7 +1256,7 @@ function SetupScreen({ onStart }: { onStart: (s: Setup) => void }) {
               onClick={() => handleCreateRoom("public")}
               className="font-bold text-xs"
             >
-              <Unlock className="h-4 w-4 text-success" /> Créer Chambre Libre
+              <Unlock className="h-4 w-4 text-success" /> Chambre Ouverte ({n}J)
             </Button>
             <Button
               variant="secondary"
@@ -1025,7 +1264,7 @@ function SetupScreen({ onStart }: { onStart: (s: Setup) => void }) {
               onClick={() => handleCreateRoom("private")}
               className="font-bold text-xs"
             >
-              <Lock className="h-4 w-4 text-accent" /> Créer Chambre Privée
+              <Lock className="h-4 w-4 text-accent" /> Chambre Privée ({n}J)
             </Button>
           </div>
 
@@ -1040,49 +1279,6 @@ function SetupScreen({ onStart }: { onStart: (s: Setup) => void }) {
               Rejoindre
             </Button>
           </div>
-
-          {/* Liste des Chambres Libres ouvertes */}
-          {rooms.filter((r) => r.status === "waiting" && r.visibility !== "private").length > 0 && (
-            <div className="space-y-2 border-t border-border pt-3">
-              <p className="text-xs font-extrabold uppercase tracking-wider text-muted-foreground">
-                Chambres Libres ouvertes (
-                {rooms.filter((r) => r.status === "waiting" && r.visibility !== "private").length})
-              </p>
-              {rooms
-                .filter((r) => r.status === "waiting" && r.visibility !== "private")
-                .slice(0, 6)
-                .map((r) => {
-                  const rPot = calculateDuelPot(r.stake, r.maxPlayers);
-                  return (
-                    <div
-                      key={r.code}
-                      className="flex items-center justify-between rounded-xl border border-border bg-background/40 p-2.5 text-xs"
-                    >
-                      <div>
-                        <span className="inline-flex items-center gap-1 font-mono font-bold text-primary">
-                          <Unlock className="h-3 w-3" /> {r.code}
-                        </span>{" "}
-                        · Hôte : <b>{r.hostName}</b>
-                        <p className="text-muted-foreground">
-                          {r.players.length}/{r.maxPlayers} vrais joueurs ·{" "}
-                          {r.stake === 0 ? (
-                            <b className="text-primary">🎁 Partie Gratuite</b>
-                          ) : (
-                            <>
-                              Mise {r.stake} GDS → Gain{" "}
-                              <b className="text-accent">{rPot.winnerPayout} GDS</b>
-                            </>
-                          )}
-                        </p>
-                      </div>
-                      <Button size="sm" onClick={() => handleJoinRoom(r.code)}>
-                        Rejoindre
-                      </Button>
-                    </div>
-                  );
-                })}
-            </div>
-          )}
         </section>
       )}
 
@@ -1115,8 +1311,8 @@ function SetupScreen({ onStart }: { onStart: (s: Setup) => void }) {
         >
           <Swords className="h-5 w-5" />
           {stake === 0
-            ? `Ouvrir un Salon Multijoueur Gratuit (${n} Joueurs)`
-            : `Ouvrir un Salon Duel (${n} Joueurs · Gain ${pot.winnerPayout} GDS)`}
+            ? `Lancer un Défi Gratuit (${n} Joueurs)`
+            : `Lancer un Défi Duel (${n} Joueurs · Mise ${stake} GDS → Gain ${pot.winnerPayout} GDS)`}
         </Button>
       ) : (
         <Button
@@ -1150,7 +1346,7 @@ function Game({
   questions: QuizQuestion[];
   onExit: () => void;
 }) {
-  const { names, myPlayerIndex, mode, stake, roomCode } = setup;
+  const { names, avatars, myPlayerIndex, mode, stake, roomCode } = setup;
   const { data: settings } = useSettings();
   const pot = calculateDuelPot(stake, names.length);
   const QUESTION_TIME = 12;
@@ -1167,8 +1363,6 @@ function Game({
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const q = questions[idx]!;
 
-  // En mode Tour par tour, c'est le tour d'un joueur précis ; en mode En Ligne et Buzzer,
-  // IL FAUT CLIQUER SUR LE BOUTON BUZZER pour déverrouiller les réponses !
   const activeResponder = mode === "tour" ? idx % names.length : buzzed;
   const canClickOptions =
     picked === null &&
@@ -1178,7 +1372,6 @@ function Game({
 
   useQuizBgm(!done, true);
 
-  // Synchronisation temps réel des clics Buzzer & Réponses entre les vrais joueurs de la chambre
   useEffect(() => {
     if (mode !== "online" || !roomCode) return;
     const ch = supabase
@@ -1211,10 +1404,8 @@ function Game({
     if (time <= 0) {
       sfx.timeout();
       if (buzzed !== null) {
-        // Un joueur avait buzzé mais n'a pas choisi à temps -> il perd la manche
         applyAnswerResolution(buzzed, -2);
       } else {
-        // Aucun joueur n'a répondu -> Manche NULLE (0 point pour tout le monde, que ce soit 2, 3 ou 4 joueurs)
         applyNoAnswerNullRound();
       }
       return;
@@ -1272,8 +1463,6 @@ function Game({
         );
       } else {
         sfx.wrong();
-        // Si le joueur qui a cliqué se trompe (ou ne choisit pas à temps), les autres ne gagnent pas car ils n'ont pas choisi :
-        // tous perdent cette question (0 pt) et on passe à la question suivante.
         setRoundOutcome(
           optionIdx === -2
             ? `⏱️ ${names[who]} a cliqué sans répondre ! Tous perdent cette question (0 pt), question suivante…`
@@ -1303,7 +1492,6 @@ function Game({
     const top = Math.max(...scores);
     const winners = scores.map((s, i) => (s === top ? i : -1)).filter((i) => i >= 0);
 
-    // Si aucun joueur n'a marqué (top <= 0) ou égalité -> MATCH NUL (2, 3 ou 4 joueurs)
     const isNullMatch = top <= 0 || winners.length !== 1;
 
     if (isNullMatch) {
@@ -1329,7 +1517,6 @@ function Game({
       sfx.lose();
     }
 
-    // Déclencher la fonction publicité Monetag après le Duel
     triggerPostGameMonetagAd(settings);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [done]);
@@ -1356,7 +1543,9 @@ function Game({
           <p className="mt-1 text-xs font-semibold opacity-95">
             {isNullMatch
               ? "Aucun joueur n'a pris l'avantage — la partie est déclarée nulle."
-              : `${champ.n} remporte la victoire face aux autres joueurs !`}
+              : iWon
+                ? "Bravo Boss ! Tu as dominé tes adversaires !"
+                : `${champ.n} remporte la victoire. Tu peux faire mieux au prochain duel !`}
           </p>
           {stake > 0 && (
             <div className="mt-3 inline-flex flex-col rounded-2xl bg-background/25 px-4 py-2 text-xs font-bold">
@@ -1387,8 +1576,10 @@ function Game({
                 !isNullMatch && k === 0 ? "border border-accent bg-accent/15" : "bg-card"
               }`}
             >
-              <span>
-                {isNullMatch ? "🤝" : ["🥇", "🥈", "🥉", "4️⃣"][k]} {r.n}
+              <span className="flex items-center gap-2.5">
+                <span>{isNullMatch ? "🤝" : ["🥇", "🥈", "🥉", "4️⃣"][k]}</span>
+                <PlayerAvatar name={r.n} avatarUrl={avatars?.[r.i]} size="sm" />
+                <span>{r.n}</span>
               </span>
               <div className="flex items-center gap-3">
                 {!isNullMatch && k === 0 && stake > 0 && (
@@ -1415,7 +1606,6 @@ function Game({
           </Button>
         </div>
 
-        {/* Publicité après le Duel */}
         <LocalBanner placement="result" />
         <AdSlot slot="result" />
       </div>
@@ -1464,9 +1654,12 @@ function Game({
               COLORS[i % COLORS.length]
             } ${activeResponder === i ? "ring-2 ring-foreground scale-[1.03]" : "opacity-80"}`}
           >
-            <p className="truncate">
-              {n} {activeResponder === i ? "🔔" : ""}
-            </p>
+            <div className="flex items-center justify-center gap-1">
+              <PlayerAvatar name={n} avatarUrl={avatars?.[i]} size="xs" />
+              <p className="truncate">
+                {n} {activeResponder === i ? "🔔" : ""}
+              </p>
+            </div>
             <p className="text-base font-extrabold">{scores[i]}</p>
           </div>
         ))}
@@ -1508,38 +1701,35 @@ function Game({
         </div>
         <h2 className="mt-2 text-lg font-bold leading-snug">{q.question}</h2>
         <p className="mt-2 flex items-center gap-1 text-[11px] text-muted-foreground">
-          <AlertCircle className="h-3.5 w-3.5 text-primary" />
-          Si personne ne répond avant 0s, la manche est <b>nulle (0 pt)</b>.
+          <AlertCircle className="h-3.5 w-3.5 text-accent" />
+          Si un joueur clique et répond juste, les autres perdent la manche. S'il se trompe ou si
+          personne ne répond : 0 pt et on passe à la question suivante !
         </p>
       </div>
 
-      {/* Message de résolution de la manche */}
-      {roundOutcome && (
-        <div className="rounded-2xl border border-primary/40 bg-primary/15 p-3 text-center text-xs font-extrabold text-foreground animate-pop">
-          {roundOutcome}
-        </div>
-      )}
-
-      {/* BOUTON BUZZER OBLIGATOIRE AVANT DE POUVOIR CHOISIR UNE RÉPONSE */}
+      {/* BOUTON BUZZER OBLIGATOIRE */}
       {mode === "online" && buzzed === null && picked === null && (
         <button
           type="button"
           onClick={() => handlePressBuzzer(myPlayerIndex)}
-          className="flex w-full items-center justify-center gap-2 rounded-3xl bg-grad-lime py-4 text-base font-extrabold text-primary-foreground shadow-glow transition-transform active:scale-95 animate-pulse"
+          className="flex w-full items-center justify-center gap-2 rounded-2xl bg-grad-sunset py-4 text-base font-extrabold text-secondary-foreground shadow-glow transition-transform active:scale-95 animate-pop"
         >
-          <BellRing className="h-6 w-6" />
-          🔔 JE CONNAIS LA RÉPONSE ! (CLIQUER POUR CHOISIR)
+          <BellRing className="h-5 w-5 animate-bounce" /> JE CONNAIS LA RÉPONSE ! (Cliquer pour
+          choisir)
         </button>
       )}
 
       {mode === "online" && buzzed !== null && buzzed !== myPlayerIndex && picked === null && (
-        <div className="rounded-2xl border border-accent/40 bg-accent/15 p-4 text-center text-sm font-extrabold text-accent">
-          ⚡ {names[buzzed]} a cliqué en premier et choisit sa réponse…
+        <div className="rounded-2xl border border-accent/40 bg-accent/15 p-3 text-center text-xs font-extrabold text-accent animate-pulse">
+          ⚡ {names[buzzed]} a cliqué en premier et est en train de choisir sa réponse ({time}s)…
         </div>
       )}
 
       {mode === "buzzer" && buzzed === null && picked === null && (
-        <div className="grid grid-cols-2 gap-3">
+        <div
+          className="grid gap-2"
+          style={{ gridTemplateColumns: `repeat(${names.length}, minmax(0, 1fr))` }}
+        >
           {names.map((n, i) => (
             <button
               key={i}
@@ -1547,46 +1737,54 @@ function Game({
               onClick={() => handlePressBuzzer(i)}
               className={`${
                 COLORS[i % COLORS.length]
-              } flex flex-col items-center justify-center rounded-3xl p-4 text-base font-extrabold text-secondary-foreground shadow-lg transition-transform active:scale-90`}
+              } rounded-2xl py-5 text-sm font-extrabold text-secondary-foreground shadow-lg transition-transform active:scale-95`}
             >
-              <span className="text-2xl">🔔</span>
-              <span className="mt-1 truncate max-w-full">{n}</span>
-              <span className="text-[10px] opacity-90">Je connais la réponse !</span>
+              🔔 {n}
+              <span className="block text-[10px] font-semibold opacity-90">Je réponds !</span>
             </button>
           ))}
         </div>
       )}
 
-      {/* Les 4 propositions A, B, C, D (verrouillées tant qu'on n'a pas cliqué sur le bouton Buzzer) */}
+      {/* Bannière de résultat de la manche */}
+      {roundOutcome && (
+        <div className="rounded-2xl border border-primary/30 bg-card p-3 text-center text-xs font-extrabold text-primary animate-pop">
+          {roundOutcome}
+        </div>
+      )}
+
+      {/* Options de réponse */}
       <div className="grid gap-2.5">
         {q.options.map((o, i) => {
-          const st =
+          const state =
             picked === null
               ? canClickOptions
-                ? "border-primary bg-card hover:bg-primary/15 active:scale-[0.98]"
-                : "border-border/50 bg-card/50 opacity-65 cursor-not-allowed"
+                ? "idle"
+                : "locked"
               : i === q.correct_index
-                ? "bg-success text-primary-foreground"
+                ? "right"
                 : i === picked
-                  ? "bg-destructive text-destructive-foreground"
-                  : "bg-card opacity-50";
+                  ? "wrong"
+                  : "dim";
+          const cls = {
+            idle: "bg-card hover:bg-muted active:scale-[0.98] border-primary/40",
+            locked: "bg-card/50 opacity-60 cursor-not-allowed",
+            right: "bg-success text-primary-foreground",
+            wrong: "bg-destructive text-destructive-foreground",
+            dim: "bg-card opacity-40",
+          }[state];
           return (
             <button
               key={i}
               type="button"
               disabled={!canClickOptions}
               onClick={() => handlePickOption(i)}
-              className={`flex items-center gap-3 rounded-2xl border p-3.5 text-left font-semibold transition-all ${st}`}
+              className={`flex items-center gap-3 rounded-2xl border border-border p-3.5 text-left font-semibold transition-all ${cls}`}
             >
-              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-background/30 font-bold">
+              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-background/30 text-sm font-bold">
                 {"ABCD"[i]}
               </span>
-              <span className="flex-1">{o}</span>
-              {!canClickOptions && picked === null && (
-                <span className="text-[10px] font-bold text-muted-foreground">
-                  {buzzed === null ? "Clique 🔔 d'abord" : "Verrouillé"}
-                </span>
-              )}
+              {o}
             </button>
           );
         })}

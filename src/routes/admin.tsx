@@ -15,6 +15,7 @@ import {
   Music,
   Megaphone,
   Upload,
+  MessageCircle,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -22,19 +23,23 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { PlayerAvatar } from "@/components/PlayerAvatar";
 import { toast } from "sonner";
 import {
   broadcastAdminUpdate,
   fetchAllRegisteredPlayers,
   fetchDeposits,
   fetchPaymentMethods,
+  fetchSupportMessages,
   PAGE_SLOTS,
   PAGE_STATUS,
   savePaymentMethods,
+  sendSupportMessage,
   SETTING_KEYS,
   updateDepositStatus,
   uploadMedia,
   type PaymentMethodConfig,
+  type SupportMessage,
 } from "@/lib/site";
 import { resetLocalBalance } from "@/lib/player";
 import { generateSmartQuestionsBatch, TOTAL_CATALOG_COUNT } from "@/lib/infiniteQuizCatalog";
@@ -167,10 +172,11 @@ function Dashboard({ email }: { email: string }) {
         <TabsList className="flex h-auto flex-wrap">
           <TabsTrigger value="deposits">💳 Dépôts</TabsTrigger>
           <TabsTrigger value="withdrawals">💸 Retraits</TabsTrigger>
+          <TabsTrigger value="support">💬 Support Live</TabsTrigger>
           <TabsTrigger value="users">👥 Utilisateurs</TabsTrigger>
           <TabsTrigger value="payment-methods">🏦 Méthodes Paiement/Retrait</TabsTrigger>
           <TabsTrigger value="banners">🖼️ Flyers & Bannières</TabsTrigger>
-          <TabsTrigger value="questions">🧠 Questions (+12k)</TabsTrigger>
+          <TabsTrigger value="questions">🧠 Questions (+15k)</TabsTrigger>
           <TabsTrigger value="quotes">✨ Statuts</TabsTrigger>
           <TabsTrigger value="embeds">Intégrations</TabsTrigger>
           <TabsTrigger value="notifs">Notifications</TabsTrigger>
@@ -183,6 +189,9 @@ function Dashboard({ email }: { email: string }) {
         </TabsContent>
         <TabsContent value="withdrawals">
           <Withdrawals />
+        </TabsContent>
+        <TabsContent value="support">
+          <SupportAdmin />
         </TabsContent>
         <TabsContent value="users">
           <UsersAdmin />
@@ -201,13 +210,18 @@ function Dashboard({ email }: { email: string }) {
             fields={[
               {
                 k: "category",
-                label: "Catégorie (musique, geographie, culture, cinema, informatique)",
+                label:
+                  "Catégorie (musique, geographie, culture, cinema, informatique, sport, histoire, sciences, logique, bible, anglais)",
               },
               { k: "lang", label: "Langue (fr, ht, en)" },
               { k: "question", label: "Question", long: true },
               { k: "options", label: "Réponses (une par ligne, 4 max)", long: true, list: true },
               { k: "correct_index", label: "Index de la bonne réponse (0 = première)", num: true },
-              { k: "difficulty", label: "Difficulté (1 facile → 5 très dur / Boss)", num: true },
+              {
+                k: "difficulty",
+                label: "Difficulté (1 facile → 5 Boss → 6 Légende)",
+                num: true,
+              },
               { k: "image_url", label: "Image (optionnelle)", upload: "questions" },
             ]}
           />
@@ -1257,10 +1271,16 @@ function QuestionsSmartGenerator() {
         >
           <option value="mix">🎲 Toutes catégories (Mix)</option>
           <option value="musique">🎵 Musique & TikTok</option>
-          <option value="geographie">🌍 Géographie</option>
+          <option value="geographie">🌍 Géographie & Monde</option>
           <option value="culture">🧠 Culture Générale</option>
           <option value="cinema">🎬 Cinéma & Séries</option>
           <option value="informatique">💻 Informatique & Tech</option>
+          <option value="sport">⚽ Sport & Football</option>
+          <option value="histoire">🏛️ Histoire & Haïti</option>
+          <option value="sciences">🔬 Sciences & Nature</option>
+          <option value="logique">🧩 Logique & Maths</option>
+          <option value="bible">📖 Bible & Spiritualité</option>
+          <option value="anglais">🗣️ Anglais & Langues</option>
         </select>
         <select
           value={diff}
@@ -1271,11 +1291,226 @@ function QuestionsSmartGenerator() {
           <option value={3}>🔥 Difficulté 3 (Difficile)</option>
           <option value={4}>⚡ Difficulté 4 (Expert)</option>
           <option value={5}>💀 Difficulté 5 (Mode BOSS)</option>
+          <option value={6}>👑 Difficulté 6 (Légende)</option>
         </select>
         <Button size="sm" onClick={handleGenerate} disabled={busy}>
           <Plus className="h-4 w-4" /> {busy ? "Génération…" : "Générer +8 Questions"}
         </Button>
       </div>
+    </div>
+  );
+}
+
+function SupportAdmin() {
+  const qc = useQueryClient();
+  const [selectedThreadId, setSelectedThreadId] = useState<string | null>(null);
+  const [replyText, setReplyText] = useState("");
+  const [sending, setSending] = useState(false);
+
+  const { data: messages = [], isLoading } = useQuery({
+    queryKey: ["admin", "support"],
+    refetchInterval: 3500,
+    queryFn: fetchSupportMessages,
+  });
+
+  useEffect(() => {
+    const ch = supabase
+      .channel("quizboss-support-admin")
+      .on("broadcast", { event: "support-msg" }, () => {
+        qc.invalidateQueries({ queryKey: ["admin", "support"] });
+      })
+      .subscribe();
+    return () => {
+      supabase.removeChannel(ch);
+    };
+  }, [qc]);
+
+  // Grouper les messages par joueur (threadId)
+  const threadsMap = new Map<
+    string,
+    {
+      threadId: string;
+      playerName: string;
+      messages: SupportMessage[];
+      lastMessage: SupportMessage;
+      needsReply: boolean;
+    }
+  >();
+
+  for (const m of messages) {
+    const existing = threadsMap.get(m.threadId);
+    if (!existing) {
+      threadsMap.set(m.threadId, {
+        threadId: m.threadId,
+        playerName: m.playerName,
+        messages: [m],
+        lastMessage: m,
+        needsReply: m.sender === "user",
+      });
+    } else {
+      existing.messages.push(m);
+      if (m.sender === "user" && m.playerName) {
+        existing.playerName = m.playerName;
+      }
+      existing.lastMessage = m;
+      existing.needsReply = m.sender === "user";
+    }
+  }
+
+  const threads = Array.from(threadsMap.values()).sort((a, b) =>
+    a.lastMessage.createdAt < b.lastMessage.createdAt ? 1 : -1,
+  );
+
+  const activeThread = threads.find((t) => t.threadId === selectedThreadId) ?? threads[0] ?? null;
+
+  const handleSendReply = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activeThread || !replyText.trim() || sending) return;
+    setSending(true);
+    try {
+      await sendSupportMessage({
+        threadId: activeThread.threadId,
+        playerName: activeThread.playerName,
+        sender: "admin",
+        text: replyText.trim(),
+      });
+      setReplyText("");
+      toast.success(`Réponse envoyée en direct dans le widget de ${activeThread.playerName} ✅`);
+      qc.invalidateQueries({ queryKey: ["admin", "support"] });
+    } catch (err) {
+      toast.error((err as Error).message);
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <div className="space-y-4 pt-2">
+      <div className="rounded-2xl bg-card p-4">
+        <h3 className="flex items-center gap-2 font-extrabold text-primary">
+          <MessageCircle className="h-4 w-4" /> Support en direct avec les joueurs ({threads.length}{" "}
+          conversations)
+        </h3>
+        <p className="text-xs text-muted-foreground">
+          Quand un joueur écrit dans le widget Support du site, son message apparaît ici. Ta réponse
+          s'affiche instantanément dans son widget avec une notification sonore.
+        </p>
+      </div>
+
+      {isLoading && (
+        <p className="py-8 text-center text-xs text-muted-foreground">
+          Chargement des messages support…
+        </p>
+      )}
+
+      {!isLoading && threads.length === 0 && (
+        <div className="rounded-2xl bg-card py-10 text-center text-sm text-muted-foreground">
+          Aucun message support reçu pour le moment.
+        </div>
+      )}
+
+      {threads.length > 0 && (
+        <div className="grid gap-4 md:grid-cols-5">
+          {/* Liste des conversations */}
+          <div className="space-y-2 md:col-span-2">
+            {threads.map((t) => {
+              const isSelected = activeThread?.threadId === t.threadId;
+              return (
+                <button
+                  key={t.threadId}
+                  type="button"
+                  onClick={() => setSelectedThreadId(t.threadId)}
+                  className={`flex w-full flex-col gap-1 rounded-2xl border p-3 text-left text-xs transition-all ${
+                    isSelected
+                      ? "border-primary bg-primary/15 shadow-glow"
+                      : "border-border bg-card hover:bg-muted/50"
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <b className="truncate text-sm">{t.playerName}</b>
+                    {t.needsReply ? (
+                      <span className="rounded-full bg-destructive px-2 py-0.5 text-[10px] font-extrabold text-destructive-foreground">
+                        À répondre
+                      </span>
+                    ) : (
+                      <span className="rounded-full bg-success/20 px-2 py-0.5 text-[10px] font-bold text-success">
+                        Répondu ✓
+                      </span>
+                    )}
+                  </div>
+                  <p className="truncate text-muted-foreground">{t.lastMessage.text}</p>
+                  <span className="text-[10px] text-muted-foreground/70">
+                    {new Date(t.lastMessage.createdAt).toLocaleString("fr-FR")} ·{" "}
+                    {t.messages.length} msg
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Fil de discussion actif */}
+          {activeThread && (
+            <div className="flex flex-col rounded-3xl border border-border bg-card p-4 md:col-span-3">
+              <div className="mb-3 flex items-center justify-between border-b border-border pb-2.5">
+                <div>
+                  <h4 className="font-extrabold text-sm">{activeThread.playerName}</h4>
+                  <p className="text-[10px] text-muted-foreground font-mono">
+                    ID : {activeThread.threadId}
+                  </p>
+                </div>
+                <span className="rounded-full bg-primary/15 px-2.5 py-0.5 text-xs font-bold text-primary">
+                  {activeThread.messages.length} messages
+                </span>
+              </div>
+
+              <div className="flex max-h-80 min-h-[220px] flex-col gap-2.5 overflow-y-auto pr-1 text-xs">
+                {activeThread.messages.map((m) => {
+                  const isAdminMsg = m.sender === "admin";
+                  return (
+                    <div
+                      key={m.id}
+                      className={`flex max-w-[85%] flex-col ${
+                        isAdminMsg ? "self-end items-end" : "self-start items-start"
+                      }`}
+                    >
+                      <div
+                        className={`rounded-2xl px-3.5 py-2 ${
+                          isAdminMsg
+                            ? "rounded-br-sm bg-primary text-primary-foreground"
+                            : "rounded-tl-sm bg-muted text-foreground"
+                        }`}
+                      >
+                        <p className="mb-0.5 text-[10px] font-extrabold opacity-80">
+                          {isAdminMsg ? "🛡️ Toi (Admin)" : `👤 ${m.playerName}`}
+                        </p>
+                        <p className="whitespace-pre-wrap break-words">{m.text}</p>
+                      </div>
+                      <span className="mt-0.5 text-[9px] text-muted-foreground">
+                        {new Date(m.createdAt).toLocaleString("fr-FR")}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <form
+                onSubmit={handleSendReply}
+                className="mt-3 flex gap-2 border-t border-border pt-3"
+              >
+                <Input
+                  placeholder={`Répondre à ${activeThread.playerName}…`}
+                  value={replyText}
+                  onChange={(e) => setReplyText(e.target.value)}
+                  className="text-xs"
+                />
+                <Button type="submit" disabled={sending || !replyText.trim()}>
+                  <Send className="h-4 w-4" /> Répondre
+                </Button>
+              </form>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -1302,6 +1537,7 @@ function UsersAdmin() {
           id: string;
           profileId?: string;
           pseudo: string;
+          avatarUrl?: string;
           coins: number;
           xp: number;
           level: number;
@@ -1316,6 +1552,7 @@ function UsersAdmin() {
         map.set(dp.id, {
           id: dp.id,
           pseudo: dp.pseudo,
+          avatarUrl: dp.avatarUrl,
           coins: dp.coins ?? 0,
           xp: dp.xp ?? 0,
           level: dp.level || 1,
@@ -1365,16 +1602,20 @@ function UsersAdmin() {
       for (const pr of profiles ?? []) {
         const lvl = Math.floor(Math.sqrt((pr.xp ?? 0) / 250)) + 1;
         const key = pr.device_id || pr.id;
+        const prev = map.get(key);
         map.set(key, {
           id: key,
           profileId: pr.id,
-          pseudo: pr.display_name?.trim() || `User_${pr.id.slice(0, 6)}`,
+          pseudo: pr.display_name?.trim() || prev?.pseudo || `User_${pr.id.slice(0, 6)}`,
+          avatarUrl: prev?.avatarUrl,
           coins: pr.coins ?? 0,
           xp: pr.xp ?? 0,
           level: lvl,
           gamesPlayed: pr.games_played ?? 0,
           bestScore: pr.best_score ?? 0,
-          online: Date.now() - new Date(pr.updated_at).getTime() < 10 * 60 * 1000,
+          online: Boolean(
+            prev?.online || Date.now() - new Date(pr.updated_at).getTime() < 10 * 60 * 1000,
+          ),
           updatedAt: pr.updated_at,
         });
       }
@@ -1383,6 +1624,7 @@ function UsersAdmin() {
       const realDir = Array.from(map.values()).map((u) => ({
         id: u.id,
         pseudo: u.pseudo,
+        avatarUrl: u.avatarUrl,
         level: u.level,
         coins: u.coins,
         xp: u.xp,
@@ -1432,10 +1674,10 @@ function UsersAdmin() {
       <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl bg-card p-4">
         <div>
           <h3 className="flex items-center gap-2 font-extrabold text-primary">
-            <Users className="h-4 w-4" /> Vrais Utilisateurs du site ({users.length})
+            <Users className="h-4 w-4" /> Joueurs disponibles & Utilisateurs ({users.length})
           </h3>
           <p className="text-xs text-muted-foreground">
-            Liste en direct des vrais comptes inscrits et joueurs actifs (synchronisée avec le mode
+            Liste en direct des comptes inscrits et joueurs disponibles (synchronisée avec le mode
             Duel Multijoueur).
           </p>
         </div>
@@ -1469,10 +1711,11 @@ function UsersAdmin() {
             >
               <div className="min-w-0 flex-1 space-y-1">
                 <div className="flex flex-wrap items-center gap-2">
-                  <span
-                    className={`h-2.5 w-2.5 rounded-full ${
-                      u.online ? "bg-success" : "bg-muted-foreground/40"
-                    }`}
+                  <PlayerAvatar
+                    name={u.pseudo}
+                    avatarUrl={u.avatarUrl}
+                    size="sm"
+                    online={u.online}
                   />
                   <b className="text-base">{u.pseudo}</b>
                   <span className="rounded-full bg-primary/15 px-2 py-0.5 text-xs font-bold text-primary">

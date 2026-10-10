@@ -14,11 +14,14 @@ import {
   Swords,
   Trophy,
   BookOpen,
+  Crown,
+  Brain,
+  UserPlus,
 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { CATEGORIES, shareWhatsApp } from "@/lib/categories";
-import { addQuizPoints, getPlayer, levelFromXp } from "@/lib/player";
+import { addQuizPoints, getPlayer, levelFromXp, useSession } from "@/lib/player";
 import { triggerPostGameMonetagAd, useSettings } from "@/lib/site";
 import { sfx, useQuizBgm } from "@/lib/sound";
 import { MuteButton } from "@/components/MuteButton";
@@ -38,7 +41,7 @@ export const Route = createFileRoute("/play/$category")({
     return {
       meta: [
         { title: t },
-        { name: "description", content: `Joue au quiz ${c?.label ?? ""} parmi +12 000 questions.` },
+        { name: "description", content: `Joue au quiz ${c?.label ?? ""} parmi +15 800 questions.` },
         { property: "og:title", content: t },
         { property: "og:description", content: `Relève le défi ${c?.label ?? ""} sur QuizBoss !` },
       ],
@@ -47,7 +50,7 @@ export const Route = createFileRoute("/play/$category")({
   component: Play,
 });
 
-type QuizModeId = "normal" | "hard" | "boss";
+type QuizModeId = "normal" | "hard" | "expert" | "boss" | "legende";
 
 const QUIZ_MODES: Record<
   QuizModeId,
@@ -67,7 +70,7 @@ const QUIZ_MODES: Record<
   normal: {
     id: "normal",
     label: "Classique ⚡",
-    sub: "10 questions progressives · 4 vies · +15 Pts & XP / rép.",
+    sub: "10 questions progressives · Chrono 18s · 4 vies · +15 Pts / rép.",
     rounds: 10,
     baseTime: 18,
     minTime: 7,
@@ -79,26 +82,50 @@ const QUIZ_MODES: Record<
   hard: {
     id: "hard",
     label: "Difficile 🔥",
-    sub: "12 questions corsées · Chrono 13s · 3 vies · +30 Pts & XP x1.5",
+    sub: "12 questions corsées · Chrono 14s · 3 vies · +30 Pts & XP x1.5",
     rounds: 12,
-    baseTime: 13,
+    baseTime: 14,
     minTime: 6,
     lives: 3,
     ptsPerCorrect: 30,
     xpMultiplier: 1.5,
     minDifficulty: 2,
   },
+  expert: {
+    id: "expert",
+    label: "Expert 🧠",
+    sub: "14 questions pointues · Chrono 11s · 2 vies · +45 Pts & XP x2",
+    rounds: 14,
+    baseTime: 11,
+    minTime: 5,
+    lives: 2,
+    ptsPerCorrect: 45,
+    xpMultiplier: 2,
+    minDifficulty: 3,
+  },
   boss: {
     id: "boss",
     label: "Mode BOSS 💀",
-    sub: "15 questions Expert · Chrono 10s · 2 vies · +50 Pts & XP x2.5",
-    rounds: 15,
-    baseTime: 10,
+    sub: "16 questions redoutables · Chrono 9s · 2 vies · +65 Pts & XP x2.5",
+    rounds: 16,
+    baseTime: 9,
     minTime: 5,
     lives: 2,
-    ptsPerCorrect: 50,
+    ptsPerCorrect: 65,
     xpMultiplier: 2.5,
     minDifficulty: 3,
+  },
+  legende: {
+    id: "legende",
+    label: "Légende Impossible 👑",
+    sub: "20 questions extrêmes · Chrono 7s · 1 seule vie (Mort subite) · +100 Pts & XP x4",
+    rounds: 20,
+    baseTime: 7,
+    minTime: 4,
+    lives: 1,
+    ptsPerCorrect: 100,
+    xpMultiplier: 4,
+    minDifficulty: 4,
   },
 };
 
@@ -205,8 +232,12 @@ function Play() {
                 }`}
               >
                 <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-background/50 text-xl">
-                  {mKey === "boss" ? (
+                  {mKey === "legende" ? (
+                    <Crown className="h-6 w-6 text-accent" />
+                  ) : mKey === "boss" ? (
                     <Skull className="h-6 w-6 text-destructive" />
+                  ) : mKey === "expert" ? (
+                    <Brain className="h-6 w-6 text-primary" />
                   ) : mKey === "hard" ? (
                     <Flame className="h-6 w-6 text-secondary" />
                   ) : (
@@ -303,10 +334,11 @@ function Game({
   const [usedShield, setUsedShield] = useState(false);
 
   const { data: settings } = useSettings();
+  const session = useSession();
   const startLevel = useRef(levelFromXp(getPlayer().xp));
   const q = questions[idx]!;
 
-  useQuizBgm(!done, modeConfig.id === "boss" || streak >= 3);
+  useQuizBgm(!done, modeConfig.id === "boss" || modeConfig.id === "legende" || streak >= 3);
 
   const timeForNext = (nextStreak: number, nextIdx: number) =>
     Math.max(
@@ -441,14 +473,37 @@ function Game({
     const p = getPlayer();
     const lvl = levelFromXp(p.xp);
     const ko = lives <= 0;
+    const ratio = correct / Math.max(1, questions.length);
     const link = `${window.location.origin}/?ref=${p.id}`;
     const text = `🔥 J'ai fait ${score} pts (${correct}/${questions.length}) en mode ${modeConfig.label} (${cat.label}) sur QuizBoss ! Niveau ${lvl} 🏆\nTu peux me battre ? 👉 ${link}`;
+
+    const coachMessage =
+      ko || ratio < 0.5
+        ? {
+            badge: "💪 Tu peux faire mieux !",
+            desc: "Ne baisse pas les bras ! Relance une partie pour prendre ta revanche et prouver ton niveau.",
+          }
+        : lives === 1 || ratio < 0.75
+          ? {
+              badge: "😅 T'as eu de la chance !",
+              desc: "C'était très chaud, tu es passé tout près du K.O. ! Tu peux faire encore mieux au prochain round.",
+            }
+          : ratio < 0.92
+            ? {
+                badge: "🔥 Belle partie, mais tu peux faire mieux !",
+                desc: "Tu maîtrises bien le sujet ! Encore un petit effort pour décrocher le sans-faute.",
+              }
+            : {
+                badge: "👑 Performance de Boss absolu !",
+                desc: "Impressionnant ! Passe à la difficulté supérieure ou affronte un joueur en Duel !",
+              };
+
     return (
-      <div className="space-y-5 py-4 animate-pop">
+      <div className="space-y-4 py-4 animate-pop">
         <div
           className={`${cat.grad} rounded-3xl p-6 text-center text-secondary-foreground shadow-xl`}
         >
-          <p className="text-6xl">{ko ? "💀" : correct >= questions.length * 0.75 ? "🏆" : "🎉"}</p>
+          <p className="text-6xl">{ko ? "💀" : ratio >= 0.75 ? "🏆" : "🎉"}</p>
           <p className="mt-1 text-xs font-extrabold uppercase tracking-widest opacity-85">
             {ko ? "Plus de vies — K.O. !" : modeConfig.label}
           </p>
@@ -456,6 +511,13 @@ function Game({
           <p className="font-semibold">
             {correct} / {questions.length} bonnes réponses · Série max : 🔥 x{bestStreak}
           </p>
+
+          {/* Mot de fin de partie ("Tu peux faire mieux", "T'as eu de la chance", etc.) */}
+          <div className="mx-auto mt-3 max-w-md rounded-2xl bg-background/25 px-4 py-2.5 text-center">
+            <p className="text-base font-extrabold">{coachMessage.badge}</p>
+            <p className="mt-0.5 text-xs font-semibold opacity-95">{coachMessage.desc}</p>
+          </div>
+
           <div className="mt-4 flex flex-wrap justify-center gap-2 text-sm font-bold">
             <span className="rounded-full bg-background/25 px-3 py-1">+{gain.pts} Points Quiz</span>
             <span className="rounded-full bg-background/25 px-3 py-1">+{gain.xp} XP</span>
@@ -468,6 +530,35 @@ function Game({
             joue en <b>Mode Duel avec mise</b> !
           </p>
         </div>
+
+        {/* Invitation à créer un compte pour les joueurs qui jouent sans être connectés */}
+        {!session && (
+          <div className="rounded-3xl border-2 border-primary bg-card p-5 shadow-glow animate-pop">
+            <div className="flex items-start gap-3">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-primary/15 text-primary">
+                <UserPlus className="h-6 w-6" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <h2 className="text-base font-extrabold text-primary">
+                  🔐 Tu joues sans compte — Crée ton compte maintenant !
+                </h2>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Sauvegarde définitivement tes <b>{score} pts</b> et ton <b>Niveau {lvl}</b>,
+                  reçois les défis Duel des autres joueurs et débloque les retraits de tes gains en
+                  GDS !
+                </p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <Button size="sm" asChild className="font-extrabold">
+                    <Link to="/auth">Créer mon compte gratuitement</Link>
+                  </Button>
+                  <Button size="sm" variant="secondary" asChild>
+                    <Link to="/auth">J'ai déjà un compte</Link>
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         <Button
           size="lg"

@@ -523,6 +523,269 @@ export const HARD_QUESTIONS: QuizQuestion[] = [
     image_url: null,
     difficulty: 3,
   },
+  // SPORT & FOOTBALL
+  {
+    id: "hq-spo-1",
+    category: "sport",
+    question:
+      "En quelle année l'équipe nationale d'Haïti (les Grenadiers) a-t-elle participé à sa première Coupe du Monde masculine de la FIFA ?",
+    options: ["1970", "1974", "1978", "1982"],
+    correct_index: 1,
+    lang: "fr",
+    image_url: null,
+    difficulty: 2,
+  },
+  {
+    id: "hq-spo-2",
+    category: "sport",
+    question:
+      "Quel joueur haïtien a inscrit le but historique contre l'Italie de Dino Zoff lors de la Coupe du Monde 1974 ?",
+    options: [
+      "Emmanuel Sanon (Manno Sanon)",
+      "Philippe Vorbe",
+      "Guy Saint-Vil",
+      "Ernst Jean-Joseph",
+    ],
+    correct_index: 0,
+    lang: "fr",
+    image_url: null,
+    difficulty: 3,
+  },
+  {
+    id: "hq-spo-3",
+    category: "sport",
+    question: "Quel pays a remporté la Coupe du Monde de la FIFA 2022 au Qatar ?",
+    options: ["France", "Argentine", "Brésil", "Croatie"],
+    correct_index: 1,
+    lang: "fr",
+    image_url: null,
+    difficulty: 1,
+  },
+  {
+    id: "hq-spo-4",
+    category: "sport",
+    question:
+      "Quel club détient le record du plus grand nombre de titres en Ligue des Champions de l'UEFA ?",
+    options: ["FC Barcelone", "AC Milan", "Real Madrid", "Bayern Munich"],
+    correct_index: 2,
+    lang: "fr",
+    image_url: null,
+    difficulty: 1,
+  },
+  {
+    id: "hq-spo-5",
+    category: "sport",
+    question:
+      "Quelle joueuse haïtienne a été sacrée meilleure jeune joueuse de la CONCACAF et évolue à l'Olympique Lyonnais ?",
+    options: [
+      "Melchie Dumornay (Corventina)",
+      "Nérilia Mondésir",
+      "Batcheba Louis",
+      "Kethna Louis",
+    ],
+    correct_index: 0,
+    lang: "fr",
+    image_url: null,
+    difficulty: 2,
+  },
+  {
+    id: "hq-spo-6",
+    category: "sport",
+    question: "Quel sprinteur détient le record du monde du 100 mètres en 9,58 secondes ?",
+    options: ["Tyson Gay", "Yohan Blake", "Usain Bolt", "Carl Lewis"],
+    correct_index: 2,
+    lang: "fr",
+    image_url: null,
+    difficulty: 2,
+  },
+  // HISTOIRE & HAÏTI
+  {
+    id: "hq-his-1",
+    category: "histoire",
+    question:
+      "Qui a rédigé l'Acte de l'Indépendance d'Haïti proclamé le 1er janvier 1804 aux Gonaïves ?",
+    options: [
+      "Louis Félix Boisrond-Tonnerre",
+      "Jean-Jacques Dessalines",
+      "Alexandre Pétion",
+      "Henri Christophe",
+    ],
+    correct_index: 0,
+    lang: "fr",
+    image_url: null,
+    difficulty: 3,
+  },
+  {
+    id: "hq-his-2",
+    category: "histoire",
+    question:
+      "Quelle héroïne de l'indépendance haïtienne a cousu le premier drapeau bicolore à l'Arcahaie en mai 1803 ?",
+    options: ["Catherine Flon", "Sanité Bélair", "Marie-Jeanne Lamartinière", "Cécile Fatiman"],
+    correct_index: 0,
+    lang: "fr",
+    image_url: null,
+    difficulty: 2,
+  },
+  {
+    id: "hq-his-3",
+    category: "histoire",
+    question:
+      "Dans quelle forteresse du Jura français Toussaint Louverture est-il décédé le 7 avril 1803 ?",
+    options: ["Fort de Joux", "Château d'If", "Bastille", "Mont-Saint-Michel"],
+    correct_index: 0,
+    lang: "fr",
+    image_url: null,
+    difficulty: 3,
+  },
+  {
+    id: "hq-his-4",
+    category: "histoire",
+    question:
+      "Quel roi bâtisseur a fait ériger la Citadelle Laferrière et le Palais Sans-Souci dans le Nord d'Haïti ?",
+    options: [
+      "Roi Henri Christophe (Henri Ier)",
+      "Empereur Jacques Ier",
+      "Président Jean-Pierre Boyer",
+      "Empereur Faustin Soulouque",
+    ],
+    correct_index: 0,
+    lang: "fr",
+    image_url: null,
+    difficulty: 2,
+  },
+  // SCIENCES & NATURE
+  {
+    id: "hq-sci-1",
+    category: "sciences",
+    question: "Quel organite cellulaire est surnommé la « centrale énergétique » de la cellule ?",
+    options: ["La mitochondrie", "Le ribosome", "L'appareil de Golgi", "Le lysosome"],
+    correct_index: 0,
+    lang: "fr",
+    image_url: null,
+    difficulty: 3,
+  },
+  {
+    id: "hq-sci-2",
+    category: "sciences",
+    question: "Quelle est la vitesse approximative de la lumière dans le vide ?",
+    options: ["300 000 km/s", "150 000 km/s", "30 000 km/s", "1 000 000 km/s"],
+    correct_index: 0,
+    lang: "fr",
+    image_url: null,
+    difficulty: 2,
+  },
+  {
+    id: "hq-sci-3",
+    category: "sciences",
+    question: "Combien d'os possède le squelette d'un être humain adulte normal ?",
+    options: ["206 os", "180 os", "256 os", "300 os"],
+    correct_index: 0,
+    lang: "fr",
+    image_url: null,
+    difficulty: 2,
+  },
+  // LOGIQUE & MATHS
+  {
+    id: "hq-log-1",
+    category: "logique",
+    question: "Complète la suite logique : 2, 6, 12, 20, 30, … Quel est le nombre suivant ?",
+    options: ["40", "42", "36", "44"],
+    correct_index: 1,
+    lang: "fr",
+    image_url: null,
+    difficulty: 3,
+  },
+  {
+    id: "hq-log-2",
+    category: "logique",
+    question:
+      "Si 5 machines fabriquent 5 objets en 5 minutes, combien de temps mettent 100 machines pour fabriquer 100 objets ?",
+    options: ["5 minutes", "100 minutes", "20 minutes", "1 minute"],
+    correct_index: 0,
+    lang: "fr",
+    image_url: null,
+    difficulty: 4,
+  },
+  {
+    id: "hq-log-3",
+    category: "logique",
+    question: "Quelle est la valeur de 2⁵ + 3³ ?",
+    options: ["59", "49", "61", "39"],
+    correct_index: 0,
+    lang: "fr",
+    image_url: null,
+    difficulty: 3,
+  },
+  // BIBLE & SPIRITUALITÉ
+  {
+    id: "hq-bib-1",
+    category: "bible",
+    question:
+      "Combien de livres composent la Bible protestante au total (Ancien et Nouveau Testament) ?",
+    options: ["66 livres", "73 livres", "60 livres", "52 livres"],
+    correct_index: 0,
+    lang: "fr",
+    image_url: null,
+    difficulty: 2,
+  },
+  {
+    id: "hq-bib-2",
+    category: "bible",
+    question:
+      "Quel roi d'Israël est réputé dans la Bible pour sa sagesse exceptionnelle et la construction du premier Temple de Jérusalem ?",
+    options: ["Salomon", "David", "Saül", "Josias"],
+    correct_index: 0,
+    lang: "fr",
+    image_url: null,
+    difficulty: 1,
+  },
+  {
+    id: "hq-bib-3",
+    category: "bible",
+    question: "Quel est le plus long psaume du livre des Psaumes ?",
+    options: ["Psaume 119", "Psaume 23", "Psaume 91", "Psaume 51"],
+    correct_index: 0,
+    lang: "fr",
+    image_url: null,
+    difficulty: 3,
+  },
+  // ANGLAIS & LANGUES
+  {
+    id: "hq-ang-1",
+    category: "anglais",
+    question:
+      "Quelle est la forme correcte au prétérit (Past Simple) du verbe irrégulier anglais « to teach » ?",
+    options: ["Taught", "Teached", "Thought", "Tought"],
+    correct_index: 0,
+    lang: "fr",
+    image_url: null,
+    difficulty: 2,
+  },
+  {
+    id: "hq-ang-2",
+    category: "anglais",
+    question: "Que signifie l'expression idiomatique anglaise « Break a leg! » ?",
+    options: ["Bonne chance !", "Fais attention !", "Cours vite !", "Repose-toi !"],
+    correct_index: 0,
+    lang: "fr",
+    image_url: null,
+    difficulty: 3,
+  },
+  {
+    id: "hq-ang-3",
+    category: "anglais",
+    question: "Choose the correct sentence in English:",
+    options: [
+      "She has been living here since 2020.",
+      "She is living here since 2020.",
+      "She have lived here since 2020.",
+      "She lived here since 2020.",
+    ],
+    correct_index: 0,
+    lang: "en",
+    image_url: null,
+    difficulty: 3,
+  },
 ];
 
 /**
@@ -542,7 +805,12 @@ export function mergeWithHardQuestions(
 }
 
 export function difficultyBadge(d: number): { label: string; cls: string } {
-  if (d >= 5)
+  if (d >= 6)
+    return {
+      label: "👑 LÉGENDE",
+      cls: "bg-accent/25 text-accent border border-accent/50",
+    };
+  if (d === 5)
     return {
       label: "💀 BOSS",
       cls: "bg-destructive/20 text-destructive border border-destructive/40",

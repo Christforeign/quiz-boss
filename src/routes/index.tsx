@@ -115,7 +115,7 @@ function Home() {
               </span>
               <span className="text-lg font-extrabold leading-tight drop-shadow">{c.label}</span>
               <span className="text-xs font-semibold opacity-90">
-                Classique · Difficile 🔥 · Mode BOSS 💀
+                5 Difficultés · Classique → Légende 👑
               </span>
             </Link>
           ))}
