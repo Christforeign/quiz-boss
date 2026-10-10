@@ -2,28 +2,54 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 
 export const SETTING_KEYS = [
-  { key: "whatsapp_support", label: "Numéro WhatsApp support (ex: 50937000000)" },
-  { key: "whatsapp_channel", label: "Lien de la chaîne WhatsApp officielle" },
-  { key: "deposit_min_amount", label: "Montant minimum de dépôt en GDS (défaut: 25)" },
-  { key: "deposit_instructions", label: "Instructions générales affichées sur la page de dépôt" },
-  { key: "withdraw_min_amount", label: "Montant minimum de retrait en GDS (défaut: 100)" },
-  { key: "withdraw_min_level", label: "Niveau minimum requis pour retirer (défaut: 1)" },
+  {
+    key: "site_bgm_url",
+    label: "🎵 Lien (URL MP3/Audio) de la chanson de fond du site (quand on ne joue pas)",
+  },
+  {
+    key: "site_bgm_credit",
+    label:
+      "🎵 Crédits & Artiste de la musique (ex: Maître Gims — Tous droits réservés au propriétaire)",
+  },
   {
     key: "monetag_meta",
     label:
       "Jeton de validation Monetag <meta name='monetag'> (défaut: 59029dc25ef25e3de878e23f259217d6)",
   },
   {
+    key: "monetag_vignette_enabled",
+    label: "Activer Fonction Pub 1 : Vignette Banner (true / false, défaut: true)",
+  },
+  {
     key: "monetag_vignette_zone",
-    label: "Zone ID Monetag Vignette Banner (défaut: 11987279)",
+    label:
+      "Fonction Pub 1 (Vignette) — Zone ID, Lien URL ou Script (défaut: 11987279 / n6wxm.com/vignette.min.js)",
+  },
+  {
+    key: "monetag_inpage_enabled",
+    label: "Activer Fonction Pub 2 : In-Page Push / In-Push (true / false, défaut: true)",
   },
   {
     key: "monetag_inpage_script",
-    label: "Script Monetag In-Page Push (In-Push) ou Bannière à injecter dans <head>",
+    label: "Fonction Pub 2 (In-Page Push / In-Push) — Zone ID, Lien URL, Code JS ou <script>",
   },
+  {
+    key: "monetag_postgame_enabled",
+    label:
+      "Afficher automatiquement la pub Monetag après chaque Quiz et chaque Duel (true / false, défaut: true)",
+  },
+  { key: "whatsapp_support", label: "Numéro WhatsApp support (ex: 50937000000)" },
+  { key: "whatsapp_channel", label: "Lien de la chaîne WhatsApp officielle" },
+  { key: "deposit_min_amount", label: "Montant minimum de dépôt en GDS (défaut: 25)" },
+  { key: "deposit_instructions", label: "Instructions générales affichées sur la page de dépôt" },
+  { key: "withdraw_min_amount", label: "Montant minimum de retrait en GDS (défaut: 100)" },
+  { key: "withdraw_min_level", label: "Niveau minimum requis pour retirer (défaut: 1)" },
   { key: "adsense_client", label: "ID éditeur AdSense (ca-pub-… optionnel)" },
   { key: "adsense_slot", label: "ID de bloc d'annonce AdSense (optionnel)" },
-  { key: "head_script", label: "Autre code HTML / Script personnalisé dans <head> (optionnel)" },
+  {
+    key: "head_script",
+    label: "Code <head> libre (accepte URL, lien, <meta>, <script>, HTML ou JS)",
+  },
 ] as const;
 
 export const PAGE_SLOTS = [
@@ -46,7 +72,9 @@ export const PAGE_STATUS = [
 export function useSettings() {
   return useQuery({
     queryKey: ["settings"],
-    staleTime: 30 * 1000,
+    staleTime: 0,
+    refetchInterval: 6000,
+    refetchOnWindowFocus: true,
     queryFn: async () => {
       const { data } = await supabase.from("app_settings").select("key,value");
       return Object.fromEntries((data ?? []).map((r) => [r.key, r.value ?? ""])) as Record<
@@ -60,14 +88,46 @@ export function useSettings() {
 export function usePages() {
   return useQuery({
     queryKey: ["custom_pages"],
+    staleTime: 0,
+    refetchInterval: 10000,
+    refetchOnWindowFocus: true,
     queryFn: async () => (await supabase.from("custom_pages").select("*")).data ?? [],
   });
 }
 
-/** Upload a file to private storage and return a long-lived signed URL. */
+/** Notifie en temps réel tous les utilisateurs connectés qu'une modification Admin a eu lieu. */
+export async function broadcastAdminUpdate() {
+  try {
+    await supabase.from("app_settings").upsert({
+      key: "site_last_updated_at",
+      value: String(Date.now()),
+      updated_at: new Date().toISOString(),
+    });
+  } catch {
+    // ignore
+  }
+  try {
+    const ch = supabase.channel("quizboss-global-sync");
+    ch.subscribe((status) => {
+      if (status === "SUBSCRIBED") {
+        ch.send({
+          type: "broadcast",
+          event: "admin-sync",
+          payload: { ts: Date.now() },
+        }).finally(() => {
+          setTimeout(() => supabase.removeChannel(ch), 800);
+        });
+      }
+    });
+  } catch {
+    // ignore
+  }
+}
+
+/** Upload a file (image or audio) to private storage and return a long-lived signed URL. */
 export async function uploadMedia(file: File, folder: string) {
   try {
-    const ext = file.name.split(".").pop()?.toLowerCase() || "png";
+    const ext = file.name.split(".").pop()?.toLowerCase() || "bin";
     const path = `${folder}/${crypto.randomUUID()}.${ext}`;
     const { error } = await supabase.storage
       .from("media")
@@ -79,12 +139,24 @@ export async function uploadMedia(file: File, folder: string) {
     if (e2 || !data) throw e2 ?? new Error("URL error");
     return data.signedUrl;
   } catch {
-    return await compressImageToDataUrl(file, 1000, 0.8);
+    if (file.type.startsWith("audio/") || /\.(mp3|m4a|wav|ogg|aac)$/i.test(file.name)) {
+      return await readFileAsDataUrl(file);
+    }
+    return await compressImageToDataUrl(file, 900, 0.78);
   }
 }
 
 export async function uploadPaymentProof(file: File): Promise<string> {
   return uploadMedia(file, "deposits");
+}
+
+function readFileAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("Impossible de lire le fichier"));
+    reader.onload = () => resolve(String(reader.result));
+    reader.readAsDataURL(file);
+  });
 }
 
 function compressImageToDataUrl(file: File, maxDim = 900, quality = 0.78): Promise<string> {
@@ -108,6 +180,124 @@ function compressImageToDataUrl(file: File, maxDim = 900, quality = 0.78): Promi
     };
     reader.readAsDataURL(file);
   });
+}
+
+/* ---------- Injection universelle de Script / URL / Lien / Code <head> & Monetag ---------- */
+
+const injectedFingerprints = new Map<string, string>();
+
+/**
+ * Injecte et exécute proprement tout format collé dans l'Admin :
+ * - Zone ID Monetag (ex: "11987279")
+ * - URL directe de script (ex: "https://n6wxm.com/vignette.min.js")
+ * - Code JS brut (ex: "(function(s){s.dataset.zone='11987279'...})(...)")
+ * - Code HTML complet (<script>...</script>, <meta ...>, <link ...>, <iframe>...)
+ */
+export function injectSmartSnippet(
+  rawInput: string,
+  holderId: string,
+  defaultDomain = "https://n6wxm.com/vignette.min.js",
+) {
+  if (typeof document === "undefined") return;
+  const trimmed = rawInput.trim();
+
+  // Supprimer l'ancien script All-in-One intrusif s'il était présent
+  if (trimmed.includes("quge5.com") || trimmed.includes("228397")) return;
+
+  const prev = injectedFingerprints.get(holderId);
+  if (prev === trimmed && document.getElementById(holderId)) return;
+  injectedFingerprints.set(holderId, trimmed);
+
+  // Nettoyer l'ancien conteneur s'il existait pour appliquer la mise à jour immédiatement
+  document.getElementById(holderId)?.remove();
+  document.querySelectorAll(`[data-holder="${holderId}"]`).forEach((el) => el.remove());
+
+  if (!trimmed) return;
+
+  const holder = document.createElement("div");
+  holder.id = holderId;
+  holder.style.display = "none";
+  document.body.appendChild(holder);
+
+  // Cas 1 : Zone ID numérique pur (ex: "11987279")
+  if (/^\d{4,12}$/.test(trimmed)) {
+    const s = document.createElement("script");
+    s.dataset.zone = trimmed;
+    s.dataset.holder = holderId;
+    s.src = defaultDomain;
+    s.async = true;
+    document.body.appendChild(s);
+    return;
+  }
+
+  // Cas 2 : URL directe (https://... ou //...)
+  if (/^(https?:)?\/\/[^\s<>"]+$/i.test(trimmed)) {
+    const s = document.createElement("script");
+    s.src = trimmed;
+    s.async = true;
+    s.dataset.holder = holderId;
+    const zoneMatch = trimmed.match(/[?&]zone=(\d+)/i);
+    if (zoneMatch?.[1]) s.dataset.zone = zoneMatch[1];
+    document.head.appendChild(s);
+    return;
+  }
+
+  // Cas 3 : Contient des balises HTML (<script>, <meta>, <link>, <iframe>...)
+  if (/<[a-z][\s\S]*>/i.test(trimmed)) {
+    const tpl = document.createElement("template");
+    tpl.innerHTML = trimmed;
+    tpl.content.childNodes.forEach((node) => {
+      if (node instanceof HTMLScriptElement) {
+        const sc = document.createElement("script");
+        Array.from(node.attributes).forEach((a) => sc.setAttribute(a.name, a.value));
+        sc.dataset.holder = holderId;
+        if (node.textContent) sc.text = node.textContent;
+        document.head.appendChild(sc);
+      } else if (node instanceof HTMLMetaElement || node instanceof HTMLLinkElement) {
+        const clone = node.cloneNode(true) as HTMLElement;
+        clone.setAttribute("data-holder", holderId);
+        document.head.appendChild(clone);
+      } else {
+        holder.appendChild(node.cloneNode(true));
+      }
+    });
+    return;
+  }
+
+  // Cas 4 : Code JavaScript brut sans balise <script> (ex: (function(s){...})(...))
+  const sc = document.createElement("script");
+  sc.dataset.holder = holderId;
+  sc.text = trimmed;
+  document.head.appendChild(sc);
+}
+
+/**
+ * Déclenche la publicité Monetag (Vignette + In-Page Push) à la fin d'un Quiz ou d'un Duel,
+ * sans gêner les boutons pendant la partie.
+ */
+export function triggerPostGameMonetagAd(settings?: Record<string, string>) {
+  if (typeof document === "undefined") return;
+  const postGameEnabled = (settings?.["monetag_postgame_enabled"] ?? "true") !== "false";
+  if (!postGameEnabled) return;
+
+  const vignetteEnabled = (settings?.["monetag_vignette_enabled"] ?? "true") !== "false";
+  const vignetteInput = settings?.["monetag_vignette_zone"]?.trim() || "11987279";
+
+  if (vignetteEnabled && vignetteInput) {
+    // Réinjecter / rafraîchir le script Vignette à la fin de la partie pour déclencher l'affichage post-jeu
+    injectedFingerprints.delete("monetag-postgame-vignette");
+    injectSmartSnippet(
+      vignetteInput,
+      "monetag-postgame-vignette",
+      "https://n6wxm.com/vignette.min.js",
+    );
+  }
+
+  const inpageEnabled = (settings?.["monetag_inpage_enabled"] ?? "true") !== "false";
+  const inpageInput = settings?.["monetag_inpage_script"]?.trim();
+  if (inpageEnabled && inpageInput) {
+    injectSmartSnippet(inpageInput, "monetag-inpage-script", "https://n6wxm.com/vignette.min.js");
+  }
 }
 
 /* ---------- Méthodes de Paiement & Retrait Modifiables ---------- */
@@ -215,17 +405,20 @@ export async function savePaymentMethods(methods: PaymentMethodConfig[]): Promis
     value: JSON.stringify(methods),
     updated_at: new Date().toISOString(),
   });
+  await broadcastAdminUpdate();
 }
 
 export function usePaymentMethods() {
   return useQuery({
     queryKey: ["payment_methods"],
-    staleTime: 30 * 1000,
+    staleTime: 0,
+    refetchInterval: 6000,
+    refetchOnWindowFocus: true,
     queryFn: fetchPaymentMethods,
   });
 }
 
-/* ---------- Système de Dépôts Manuels (avec preuve de paiement) ---------- */
+/* ---------- Système de Dépôts Manuels (avec preuve de paiement & sync multi-appareils) ---------- */
 
 export type DepositRequest = {
   id: string;
@@ -265,7 +458,11 @@ function writeLocalDeposits(list: DepositRequest[]) {
 }
 
 export async function fetchDeposits(): Promise<DepositRequest[]> {
-  const local = readLocalDeposits();
+  const map = new Map<string, DepositRequest>();
+  for (const d of readLocalDeposits()) {
+    map.set(d.id, d);
+  }
+
   try {
     const { data } = await supabase
       .from("app_settings")
@@ -274,18 +471,54 @@ export async function fetchDeposits(): Promise<DepositRequest[]> {
       .maybeSingle();
     if (data?.value) {
       const remote = JSON.parse(data.value) as DepositRequest[];
-      const map = new Map<string, DepositRequest>();
-      for (const d of [...local, ...remote]) map.set(d.id, d);
-      const merged = Array.from(map.values()).sort((a, b) =>
-        a.created_at < b.created_at ? 1 : -1,
-      );
-      writeLocalDeposits(merged);
-      return merged;
+      for (const d of remote) map.set(d.id, d);
     }
   } catch {
-    // fallback to local
+    // ignore
   }
-  return local.sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
+
+  // Lire aussi les dépôts soumis par les joueurs via la table withdrawals (préfixe DEPOT:)
+  try {
+    const { data: wRows } = await supabase
+      .from("withdrawals")
+      .select("*")
+      .like("method", "DEPOT:%")
+      .order("created_at", { ascending: false });
+    for (const w of wRows ?? []) {
+      let meta: {
+        transaction_ref?: string;
+        proof_url?: string | null;
+        notes?: string | null;
+        user_id?: string | null;
+      } = {};
+      try {
+        meta = JSON.parse(w.contact || "{}");
+      } catch {
+        meta = { transaction_ref: w.contact };
+      }
+      const existing = map.get(w.id);
+      map.set(w.id, {
+        id: w.id,
+        player_id: w.player_id,
+        user_id: w.user_id ?? meta.user_id ?? existing?.user_id ?? null,
+        full_name: w.full_name,
+        sender_account: w.account,
+        method: w.method.replace(/^DEPOT:/, ""),
+        amount: w.amount,
+        transaction_ref: meta.transaction_ref ?? existing?.transaction_ref ?? "",
+        proof_url: meta.proof_url ?? existing?.proof_url ?? null,
+        notes: meta.notes ?? existing?.notes ?? null,
+        status: (w.status as DepositRequest["status"]) || existing?.status || "pending",
+        created_at: w.created_at,
+      });
+    }
+  } catch {
+    // ignore if non-admin
+  }
+
+  const merged = Array.from(map.values()).sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
+  writeLocalDeposits(merged);
+  return merged;
 }
 
 async function saveDepositsLedger(list: DepositRequest[]) {
@@ -293,7 +526,7 @@ async function saveDepositsLedger(list: DepositRequest[]) {
   try {
     await supabase.from("app_settings").upsert({
       key: SETTINGS_DEPOSITS_KEY,
-      value: JSON.stringify(list.slice(0, 200)),
+      value: JSON.stringify(list.slice(0, 150)),
       updated_at: new Date().toISOString(),
     });
   } catch {
@@ -305,12 +538,42 @@ export async function createDepositRequest(
   req: Omit<DepositRequest, "id" | "status" | "created_at">,
 ): Promise<DepositRequest> {
   const current = await fetchDeposits();
+  let newId =
+    typeof crypto !== "undefined" && "randomUUID" in crypto
+      ? crypto.randomUUID()
+      : `dep-${Date.now()}`;
+
+  // Insérer aussi dans withdrawals (autorisé en INSERT pour tous les joueurs anon/authenticated)
+  try {
+    const contactPayload = JSON.stringify({
+      transaction_ref: req.transaction_ref,
+      proof_url: req.proof_url,
+      notes: req.notes,
+      user_id: req.user_id,
+    });
+    const { data: inserted } = await supabase
+      .from("withdrawals")
+      .insert({
+        player_id: req.player_id,
+        user_id: req.user_id,
+        full_name: req.full_name,
+        contact: contactPayload,
+        method: `DEPOT:${req.method}`,
+        account: req.sender_account,
+        amount: req.amount,
+        level: 1,
+        status: "pending",
+      })
+      .select("id")
+      .maybeSingle();
+    if (inserted?.id) newId = inserted.id;
+  } catch {
+    // ignore
+  }
+
   const item: DepositRequest = {
     ...req,
-    id:
-      typeof crypto !== "undefined" && "randomUUID" in crypto
-        ? crypto.randomUUID()
-        : `dep-${Date.now()}`,
+    id: newId,
     status: "pending",
     created_at: new Date().toISOString(),
   };
@@ -323,6 +586,12 @@ export async function updateDepositStatus(
   id: string,
   status: "approved" | "rejected",
 ): Promise<DepositRequest | null> {
+  try {
+    await supabase.from("withdrawals").update({ status }).eq("id", id);
+  } catch {
+    // ignore
+  }
+
   const current = await fetchDeposits();
   let target: DepositRequest | null = null;
   const next = current.map((d) => {
@@ -353,6 +622,7 @@ export async function updateDepositStatus(
       // ignore
     }
   }
+  await broadcastAdminUpdate();
   return target;
 }
 
@@ -407,127 +677,63 @@ export function calculateDuelPot(stake: number, playerCount: number): DuelPotBre
   };
 }
 
-/* ---------- Annuaire de tous les comptes (Pseudos) & Défis Duel ---------- */
+/* ---------- Annuaire des VRAIS Comptes Joueurs (Zéro faux joueurs / bots) ---------- */
 
 export type RegisteredPlayer = {
   id: string;
   pseudo: string;
   level: number;
+  coins?: number;
+  xp?: number;
+  gamesPlayed?: number;
   online?: boolean;
   updatedAt: string;
 };
 
-const INITIAL_COMMUNITY_PLAYERS: RegisteredPlayer[] = [
-  {
-    id: "usr-ht-1",
-    pseudo: "JeanMarc_509",
-    level: 7,
-    online: true,
-    updatedAt: "2026-10-09T10:00:00Z",
-  },
-  {
-    id: "usr-ht-2",
-    pseudo: "StephyQueen",
-    level: 5,
-    online: true,
-    updatedAt: "2026-10-09T10:00:00Z",
-  },
-  {
-    id: "usr-ht-3",
-    pseudo: "KevBoss_HT",
-    level: 9,
-    online: true,
-    updatedAt: "2026-10-09T10:00:00Z",
-  },
-  {
-    id: "usr-ht-4",
-    pseudo: "Nadia_PaP",
-    level: 4,
-    online: true,
-    updatedAt: "2026-10-09T10:00:00Z",
-  },
-  {
-    id: "usr-ht-5",
-    pseudo: "JuniorGonaives",
-    level: 6,
-    online: true,
-    updatedAt: "2026-10-09T10:00:00Z",
-  },
-  {
-    id: "usr-ht-6",
-    pseudo: "Mika_CapHaitien",
-    level: 8,
-    online: true,
-    updatedAt: "2026-10-09T10:00:00Z",
-  },
-  {
-    id: "usr-ht-7",
-    pseudo: "Daphnee_Jacmel",
-    level: 3,
-    online: false,
-    updatedAt: "2026-10-09T09:30:00Z",
-  },
-  {
-    id: "usr-ht-8",
-    pseudo: "Alex_Cayes",
-    level: 5,
-    online: true,
-    updatedAt: "2026-10-09T10:00:00Z",
-  },
-  {
-    id: "usr-ht-9",
-    pseudo: "Woodley_Pro",
-    level: 11,
-    online: true,
-    updatedAt: "2026-10-09T10:00:00Z",
-  },
-  {
-    id: "usr-ht-10",
-    pseudo: "ashley_quiz",
-    level: 4,
-    online: false,
-    updatedAt: "2026-10-09T09:15:00Z",
-  },
-];
+const LEGACY_FAKE_PSEUDOS = new Set([
+  "jeanmarc_509",
+  "stephyqueen",
+  "kevboss_ht",
+  "nadia_pap",
+  "juniorgonaives",
+  "mika_caphaitien",
+  "daphnee_jacmel",
+  "alex_cayes",
+  "woodley_pro",
+  "ashley_quiz",
+]);
+
+function isFakeLegacyPlayer(p: { id?: string; pseudo?: string }) {
+  if (!p.pseudo?.trim()) return true;
+  if (p.id?.startsWith("usr-ht-")) return true;
+  if (LEGACY_FAKE_PSEUDOS.has(p.pseudo.trim().toLowerCase())) return true;
+  return false;
+}
 
 const PLAYERS_DIR_SETTINGS_KEY = "players_directory_json";
-const LOCAL_PLAYERS_DIR_KEY = "quizboss-players-dir-v1";
+const LOCAL_PLAYERS_DIR_KEY = "quizboss-real-players-dir-v2";
+
+// Cache mémoire des joueurs connectés en direct via Supabase Realtime Presence
+let realtimePresencePlayers: RegisteredPlayer[] = [];
+
+export function setRealtimePresencePlayers(list: RegisteredPlayer[]) {
+  realtimePresencePlayers = list.filter((p) => !isFakeLegacyPlayer(p));
+}
 
 export async function fetchAllRegisteredPlayers(): Promise<RegisteredPlayer[]> {
   const map = new Map<string, RegisteredPlayer>();
-  for (const p of INITIAL_COMMUNITY_PLAYERS) {
-    map.set(p.id, p);
-  }
 
   if (typeof window !== "undefined") {
     try {
       const raw = window.localStorage.getItem(LOCAL_PLAYERS_DIR_KEY);
       if (raw) {
         for (const p of JSON.parse(raw) as RegisteredPlayer[]) {
-          if (p.pseudo?.trim()) map.set(p.id, p);
+          if (!isFakeLegacyPlayer(p)) map.set(p.id, { ...p, online: false });
         }
       }
     } catch {
       // ignore
     }
-  }
-
-  try {
-    const { data: profs } = await supabase.from("profiles").select("id,display_name,xp,updated_at");
-    for (const pr of profs ?? []) {
-      if (pr.display_name?.trim()) {
-        const lvl = Math.floor(Math.sqrt((pr.xp ?? 0) / 250)) + 1;
-        map.set(pr.id, {
-          id: pr.id,
-          pseudo: pr.display_name.trim(),
-          level: lvl,
-          online: true,
-          updatedAt: pr.updated_at ?? new Date().toISOString(),
-        });
-      }
-    }
-  } catch {
-    // ignore RLS restriction
   }
 
   try {
@@ -538,14 +744,57 @@ export async function fetchAllRegisteredPlayers(): Promise<RegisteredPlayer[]> {
       .maybeSingle();
     if (data?.value) {
       for (const p of JSON.parse(data.value) as RegisteredPlayer[]) {
-        if (p.pseudo?.trim()) map.set(p.id, p);
+        if (!isFakeLegacyPlayer(p)) {
+          map.set(p.id, { ...p, online: false });
+        }
       }
     }
   } catch {
     // ignore
   }
 
-  return Array.from(map.values());
+  try {
+    const { data: profs } = await supabase
+      .from("profiles")
+      .select("id,display_name,coins,xp,games_played,device_id,updated_at")
+      .order("updated_at", { ascending: false });
+    for (const pr of profs ?? []) {
+      const pseudo = pr.display_name?.trim();
+      if (pseudo && !isFakeLegacyPlayer({ id: pr.id, pseudo })) {
+        const lvl = Math.floor(Math.sqrt((pr.xp ?? 0) / 250)) + 1;
+        const key = pr.device_id || pr.id;
+        map.set(key, {
+          id: key,
+          pseudo,
+          level: lvl,
+          coins: pr.coins ?? 0,
+          xp: pr.xp ?? 0,
+          gamesPlayed: pr.games_played ?? 0,
+          online: Date.now() - new Date(pr.updated_at).getTime() < 10 * 60 * 1000,
+          updatedAt: pr.updated_at ?? new Date().toISOString(),
+        });
+      }
+    }
+  } catch {
+    // ignore RLS restriction for non-admin
+  }
+
+  // Marquer en ligne les vrais joueurs connectés via Supabase Realtime Presence
+  for (const rp of realtimePresencePlayers) {
+    if (!isFakeLegacyPlayer(rp)) {
+      const prev = map.get(rp.id);
+      map.set(rp.id, {
+        ...prev,
+        ...rp,
+        online: true,
+      });
+    }
+  }
+
+  return Array.from(map.values()).sort((a, b) => {
+    if (Boolean(a.online) !== Boolean(b.online)) return a.online ? -1 : 1;
+    return a.updatedAt < b.updatedAt ? 1 : -1;
+  });
 }
 
 export async function registerPlayerInDirectory(player: {
@@ -553,17 +802,18 @@ export async function registerPlayerInDirectory(player: {
   pseudo: string;
   level: number;
 }) {
-  if (!player.pseudo.trim()) return;
+  const cleanPseudo = player.pseudo.trim();
+  if (!cleanPseudo || isFakeLegacyPlayer({ id: player.id, pseudo: cleanPseudo })) return;
   const all = await fetchAllRegisteredPlayers();
   const entry: RegisteredPlayer = {
     id: player.id,
-    pseudo: player.pseudo.trim(),
+    pseudo: cleanPseudo,
     level: player.level,
     online: true,
     updatedAt: new Date().toISOString(),
   };
-  const filtered = all.filter((x) => x.id !== player.id);
-  const next = [entry, ...filtered].slice(0, 150);
+  const filtered = all.filter((x) => x.id !== player.id && !isFakeLegacyPlayer(x));
+  const next = [entry, ...filtered].slice(0, 200);
   if (typeof window !== "undefined") {
     try {
       window.localStorage.setItem(LOCAL_PLAYERS_DIR_KEY, JSON.stringify(next));
@@ -582,14 +832,13 @@ export async function registerPlayerInDirectory(player: {
   }
 }
 
-/* ---------- Salons Multijoueurs User vs User (Chambre Libre & Chambre Privée, 2 à 4 joueurs) ---------- */
+/* ---------- Salons Multijoueurs Vrais Users (Chambre Libre & Privée, 2 à 4 joueurs) ---------- */
 
 export type DuelParticipant = {
   id: string;
   name: string;
   score: number;
   finished: boolean;
-  isBot?: boolean;
 };
 
 export type DuelRoom = {
@@ -599,7 +848,7 @@ export type DuelRoom = {
   category: string;
   stake: number;
   maxPlayers: number; // 2..4
-  visibility: "public" | "private"; // Chambre libre vs Chambre privée
+  visibility: "public" | "private";
   invitedPseudos?: string[];
   status: "waiting" | "playing" | "finished";
   players: DuelParticipant[];
@@ -607,7 +856,7 @@ export type DuelRoom = {
   createdAt: string;
 };
 
-const LOCAL_ROOMS_KEY = "quizboss-duel-rooms-v2";
+const LOCAL_ROOMS_KEY = "quizboss-duel-rooms-v3";
 const SETTINGS_ROOMS_KEY = "duel_rooms_active_json";
 
 function readLocalRooms(): DuelRoom[] {
@@ -663,6 +912,22 @@ export async function saveDuelRoom(room: DuelRoom): Promise<DuelRoom> {
       key: SETTINGS_ROOMS_KEY,
       value: JSON.stringify(trimmed),
       updated_at: new Date().toISOString(),
+    });
+  } catch {
+    // ignore
+  }
+  try {
+    const ch = supabase.channel("quizboss-duel-lobby");
+    ch.subscribe((status) => {
+      if (status === "SUBSCRIBED") {
+        ch.send({
+          type: "broadcast",
+          event: "room-updated",
+          payload: { room },
+        }).finally(() => {
+          setTimeout(() => supabase.removeChannel(ch), 600);
+        });
+      }
     });
   } catch {
     // ignore

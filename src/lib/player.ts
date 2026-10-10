@@ -30,7 +30,7 @@ export type Tx = {
   unit?: "GDS" | "PTS";
 };
 
-export const FREE_DUELS_PER_DAY = 5;
+export const FREE_DUELS_PER_DAY = 1;
 export const SHARE_DUEL_BONUS = 3;
 
 // Nouvelle clé v3 : réinitialise le solde GDS de tous les joueurs à 0

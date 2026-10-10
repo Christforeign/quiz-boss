@@ -1,4 +1,5 @@
-import { Link, useRouterState } from "@tanstack/react-router";
+import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
+import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import {
   Home,
@@ -12,19 +13,23 @@ import {
   MessageCircle,
   Megaphone,
   X,
+  Music,
+  Pause,
+  Play,
 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
+import { addCoins, getPlayer, levelFromXp, usePlayer, useAuthSync, useSession } from "@/lib/player";
 import {
-  addCoins,
-  getPlayer,
-  levelFromXp,
-  usePlayer,
-  useAuthSync,
-  useSession,
-  REFERRAL_BONUS,
-} from "@/lib/player";
-import { fetchDeposits, usePages, useSettings } from "@/lib/site";
+  fetchDeposits,
+  injectSmartSnippet,
+  registerPlayerInDirectory,
+  setRealtimePresencePlayers,
+  usePages,
+  useSettings,
+  type RegisteredPlayer,
+} from "@/lib/site";
+import { toggleSiteMusic, useIsGameActive, useSiteBgm, useSiteMusicPlaying } from "@/lib/sound";
 import { NotificationPrompt } from "./NotificationPrompt";
 import { MuteButton } from "./MuteButton";
 
@@ -110,6 +115,155 @@ function useDepositCreditSync() {
   }, [session?.user.id]);
 }
 
+function useRealtimeAdminSync() {
+  const qc = useQueryClient();
+  const { data: settings } = useSettings();
+  const lastUpdatedStamp = settings?.["site_last_updated_at"];
+
+  useEffect(() => {
+    if (!lastUpdatedStamp) return;
+    qc.invalidateQueries({ queryKey: ["payment_methods"] });
+    qc.invalidateQueries({ queryKey: ["banners"] });
+    qc.invalidateQueries({ queryKey: ["custom_pages"] });
+    qc.invalidateQueries({ queryKey: ["questions"] });
+    qc.invalidateQueries({ queryKey: ["quotes"] });
+    qc.invalidateQueries({ queryKey: ["sticker-packs"] });
+  }, [lastUpdatedStamp, qc]);
+
+  useEffect(() => {
+    const ch = supabase
+      .channel("quizboss-global-sync")
+      .on("broadcast", { event: "admin-sync" }, () => {
+        qc.invalidateQueries();
+      })
+      .subscribe();
+    return () => {
+      supabase.removeChannel(ch);
+    };
+  }, [qc]);
+}
+
+function useGlobalPresenceSync() {
+  const player = usePlayer();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    if (!player.id) return;
+    const myPseudo = player.name?.trim() || `Joueur_${player.id.slice(0, 4)}`;
+    if (player.name?.trim()) {
+      registerPlayerInDirectory({
+        id: player.id,
+        pseudo: player.name.trim(),
+        level: levelFromXp(player.xp),
+      });
+    }
+
+    const ch = supabase.channel("quizboss-duel-lobby", {
+      config: { presence: { key: player.id } },
+    });
+
+    ch.on("presence", { event: "sync" }, () => {
+      const state = ch.presenceState<{
+        id: string;
+        pseudo: string;
+        level: number;
+        updatedAt: string;
+      }>();
+      const onlineList: RegisteredPlayer[] = [];
+      for (const entries of Object.values(state)) {
+        for (const item of entries) {
+          if (item.id && item.pseudo) {
+            onlineList.push({
+              id: item.id,
+              pseudo: item.pseudo,
+              level: item.level || 1,
+              online: true,
+              updatedAt: item.updatedAt || new Date().toISOString(),
+            });
+          }
+        }
+      }
+      setRealtimePresencePlayers(onlineList);
+    })
+      .on("broadcast", { event: "duel-challenge" }, ({ payload }) => {
+        if (!payload) return;
+        const isForMe =
+          payload.targetId === player.id ||
+          (payload.targetPseudo && payload.targetPseudo.toLowerCase() === myPseudo.toLowerCase());
+        if (isForMe && payload.hostId !== player.id) {
+          toast(`⚔️ ${payload.hostName} te défie en Duel (${payload.stake} GDS) !`, {
+            description: `Chambre ${payload.roomCode} · ${payload.maxPlayers} joueurs`,
+            duration: 12000,
+            action: {
+              label: "Rejoindre",
+              onClick: () => {
+                navigate({ to: "/duel", search: { room: payload.roomCode } as never });
+              },
+            },
+          });
+        }
+      })
+      .subscribe(async (status) => {
+        if (status === "SUBSCRIBED") {
+          await ch.track({
+            id: player.id,
+            pseudo: myPseudo,
+            level: levelFromXp(player.xp),
+            updatedAt: new Date().toISOString(),
+          });
+        }
+      });
+
+    return () => {
+      supabase.removeChannel(ch);
+    };
+  }, [player.id, player.name, player.xp, navigate]);
+}
+
+function SiteMusicBar() {
+  const { data: settings } = useSettings();
+  const inGame = useIsGameActive();
+  const isPlaying = useSiteMusicPlaying();
+  const songUrl = settings?.["site_bgm_url"]?.trim();
+  const songCredit = settings?.["site_bgm_credit"]?.trim();
+
+  useSiteBgm(songUrl);
+
+  if (!songUrl || inGame) return null;
+
+  return (
+    <div className="mx-auto mb-2 px-4">
+      <div className="flex items-center justify-between gap-2 rounded-2xl border border-primary/25 bg-card/85 px-3 py-1.5 text-xs backdrop-blur-md">
+        <div className="flex items-center gap-2 min-w-0">
+          <button
+            type="button"
+            onClick={toggleSiteMusic}
+            aria-label={isPlaying ? "Mettre la musique en pause" : "Écouter la musique du site"}
+            className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground transition-transform active:scale-90"
+          >
+            {isPlaying ? <Pause className="h-3 w-3" /> : <Play className="h-3 w-3" />}
+          </button>
+          <Music
+            className={`h-3.5 w-3.5 shrink-0 text-primary ${isPlaying ? "animate-spin" : ""}`}
+          />
+          <span className="truncate font-semibold text-muted-foreground">
+            {songCredit ? (
+              <>
+                <b className="text-foreground">{songCredit}</b>
+              </>
+            ) : (
+              "Ambiance musicale QuizBoss"
+            )}
+          </span>
+        </div>
+        <span className="shrink-0 text-[10px] font-bold text-primary">
+          {isPlaying ? "En écoute" : "Cliquer ▶"}
+        </span>
+      </div>
+    </div>
+  );
+}
+
 export function AppShell({ children }: { children: React.ReactNode }) {
   const player = usePlayer();
   const path = useRouterState({ select: (s) => s.location.pathname });
@@ -117,6 +271,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   useNotificationPoller();
   useAuthSync();
   useDepositCreditSync();
+  useRealtimeAdminSync();
+  useGlobalPresenceSync();
   useInjectedScripts();
   const session = useSession();
   const isAdmin = path.startsWith("/admin");
@@ -156,6 +312,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
         )}
       </header>
+      {!isAdmin && <SiteMusicBar />}
       {!isAdmin && <NotificationPrompt />}
       <main className="px-4">{children}</main>
       {!isAdmin && <Footer />}
@@ -182,40 +339,19 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   );
 }
 
-function injectHtmlSnippetIntoHead(html: string, holderId: string) {
-  // Ignorer l'ancien script All-in-One (quge5.com / 228397) s'il était resté en base
-  if (html.includes("quge5.com") || html.includes("228397")) return;
-  if (document.getElementById(holderId)) return;
-
-  const holder = document.createElement("div");
-  holder.id = holderId;
-  holder.style.display = "none";
-  const tpl = document.createElement("template");
-  tpl.innerHTML = html;
-  tpl.content.childNodes.forEach((n) => {
-    if (n instanceof HTMLScriptElement) {
-      const sc = document.createElement("script");
-      Array.from(n.attributes).forEach((a) => sc.setAttribute(a.name, a.value));
-      sc.text = n.text;
-      document.head.appendChild(sc);
-    } else {
-      holder.appendChild(n.cloneNode(true));
-    }
-  });
-  document.body.appendChild(holder);
-}
-
 function useInjectedScripts() {
   const { data } = useSettings();
+  const inGame = useIsGameActive();
+
   useEffect(() => {
-    // Supprimer uniquement l'ancien script Monetag All-in-One (quge5.com / zone 228397)
+    // Supprimer l'ancien script Monetag All-in-One (quge5.com / zone 228397)
     document
       .querySelectorAll('script[src*="quge5.com"], script[data-zone="228397"]')
       .forEach((el) => el.remove());
 
     if (!data) return;
 
-    // Mise à jour éventuelle du jeton <meta name="monetag">
+    // 1. Jeton de validation <meta name="monetag">
     const monetagToken = data["monetag_meta"]?.trim() || "59029dc25ef25e3de878e23f259217d6";
     let metaEl = document.querySelector('meta[name="monetag"]') as HTMLMetaElement | null;
     if (!metaEl) {
@@ -225,26 +361,29 @@ function useInjectedScripts() {
     }
     metaEl.content = monetagToken;
 
-    // Zone Monetag Vignette Banner (par défaut 11987279 sur n6wxm.com/vignette.min.js)
-    const vignetteZone = data["monetag_vignette_zone"]?.trim() || "11987279";
-    if (vignetteZone && !document.querySelector(`script[data-zone="${vignetteZone}"]`)) {
-      (function (s: HTMLScriptElement) {
-        s.dataset.zone = vignetteZone;
-        s.src = "https://n6wxm.com/vignette.min.js";
-      })(
-        [document.documentElement, document.body]
-          .filter(Boolean)
-          .pop()!
-          .appendChild(document.createElement("script")),
+    // 2. Fonction Pub 2 : In-Page Push (In-Push) — non-intrusive
+    const inpageEnabled = (data["monetag_inpage_enabled"] ?? "true") !== "false";
+    const inpageScript = data["monetag_inpage_script"]?.trim();
+    if (inpageEnabled && inpageScript && !inGame) {
+      injectSmartSnippet(
+        inpageScript,
+        "monetag-inpage-script",
+        "https://n6wxm.com/vignette.min.js",
       );
     }
 
-    // Script Monetag In-Page Push (In-Push) ou Bannière collé dans l'Admin
-    const inpageScript = data["monetag_inpage_script"]?.trim();
-    if (inpageScript) {
-      injectHtmlSnippetIntoHead(inpageScript, "monetag-inpage-script");
+    // 3. Fonction Pub 1 : Vignette Banner — uniquement hors partie active pour ne jamais gêner les boutons de quiz/duel
+    const vignetteEnabled = (data["monetag_vignette_enabled"] ?? "true") !== "false";
+    const vignetteZone = data["monetag_vignette_zone"]?.trim() || "11987279";
+    if (vignetteEnabled && vignetteZone && !inGame) {
+      injectSmartSnippet(
+        vignetteZone,
+        "monetag-vignette-script",
+        "https://n6wxm.com/vignette.min.js",
+      );
     }
 
+    // 4. Google AdSense (si configuré)
     const client = data["adsense_client"]?.trim();
     if (client && !document.getElementById("adsense-loader")) {
       const sc = document.createElement("script");
@@ -255,11 +394,12 @@ function useInjectedScripts() {
       document.head.appendChild(sc);
     }
 
+    // 5. Code <head> libre (URL, lien, <meta>, <script>, HTML ou JS)
     const html = data["head_script"]?.trim();
     if (html) {
-      injectHtmlSnippetIntoHead(html, "custom-head-script");
+      injectSmartSnippet(html, "custom-head-script");
     }
-  }, [data]);
+  }, [data, inGame]);
 }
 
 function Footer() {

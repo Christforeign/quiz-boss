@@ -2,7 +2,20 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
-import { Pencil, Trash2, Plus, Check, X, LogOut, Send, Eye } from "lucide-react";
+import {
+  Pencil,
+  Trash2,
+  Plus,
+  Check,
+  X,
+  LogOut,
+  Send,
+  Eye,
+  Users,
+  Music,
+  Megaphone,
+  Upload,
+} from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,6 +24,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import {
+  broadcastAdminUpdate,
+  fetchAllRegisteredPlayers,
   fetchDeposits,
   fetchPaymentMethods,
   PAGE_SLOTS,
@@ -152,6 +167,7 @@ function Dashboard({ email }: { email: string }) {
         <TabsList className="flex h-auto flex-wrap">
           <TabsTrigger value="deposits">💳 Dépôts</TabsTrigger>
           <TabsTrigger value="withdrawals">💸 Retraits</TabsTrigger>
+          <TabsTrigger value="users">👥 Utilisateurs</TabsTrigger>
           <TabsTrigger value="payment-methods">🏦 Méthodes Paiement/Retrait</TabsTrigger>
           <TabsTrigger value="banners">🖼️ Flyers & Bannières</TabsTrigger>
           <TabsTrigger value="questions">🧠 Questions (+12k)</TabsTrigger>
@@ -160,13 +176,16 @@ function Dashboard({ email }: { email: string }) {
           <TabsTrigger value="notifs">Notifications</TabsTrigger>
           <TabsTrigger value="stickers">Stickers</TabsTrigger>
           <TabsTrigger value="pages">Pages</TabsTrigger>
-          <TabsTrigger value="settings">⚙️ Réglages & Soldes</TabsTrigger>
+          <TabsTrigger value="settings">⚙️ Réglages, Musique & Pubs</TabsTrigger>
         </TabsList>
         <TabsContent value="deposits">
           <DepositsAdmin />
         </TabsContent>
         <TabsContent value="withdrawals">
           <Withdrawals />
+        </TabsContent>
+        <TabsContent value="users">
+          <UsersAdmin />
         </TabsContent>
         <TabsContent value="payment-methods">
           <PaymentMethodsAdmin />
@@ -486,13 +505,15 @@ function Crud({
       : supabase.from(table).insert(payload as never);
     const { error } = await q;
     if (error) return void toast.error(error.message);
-    toast.success("Enregistré");
+    toast.success("Enregistré et synchronisé pour tous les joueurs ✅");
     setEdit(null);
+    await broadcastAdminUpdate();
     qc.invalidateQueries();
   };
   const del = async (id: string) => {
     if (!confirm("Supprimer ?")) return;
     await supabase.from(table).delete().eq("id", id);
+    await broadcastAdminUpdate();
     qc.invalidateQueries();
   };
   return (
@@ -600,7 +621,9 @@ function Withdrawals() {
     if (error) return void toast.error(error.message);
     qc.invalidateQueries({ queryKey: ["admin", "withdrawals"] });
   };
-  const list = data.filter((w) => filter === "all" || w.status === filter);
+  const list = data.filter(
+    (w) => !w.method?.startsWith("DEPOT:") && (filter === "all" || w.status === filter),
+  );
   return (
     <div className="space-y-3 pt-2">
       <div className="flex gap-2">
@@ -696,6 +719,7 @@ function Notifs() {
     if (error) return void toast.error(error.message);
     toast.success("Notification envoyée");
     setF({ title: "", body: "", url: "" });
+    await broadcastAdminUpdate();
     qc.invalidateQueries({ queryKey: ["admin", "notifications"] });
   };
   return (
@@ -884,7 +908,8 @@ function PagesAdmin() {
       .from("custom_pages")
       .upsert({ slug, ...f, updated_at: new Date().toISOString() });
     if (error) return void toast.error(error.message);
-    toast.success("Page enregistrée");
+    toast.success("Page enregistrée et mise à jour pour tous les utilisateurs ✅");
+    await broadcastAdminUpdate();
     qc.invalidateQueries({ queryKey: ["admin", "pages"] });
     qc.invalidateQueries({ queryKey: ["custom_pages"] });
   };
@@ -1255,6 +1280,243 @@ function QuestionsSmartGenerator() {
   );
 }
 
+function UsersAdmin() {
+  const qc = useQueryClient();
+  const [search, setSearch] = useState("");
+  const [editingCoins, setEditingCoins] = useState<Record<string, string>>({});
+
+  const { data: users = [], isLoading } = useQuery({
+    queryKey: ["admin", "users"],
+    refetchInterval: 8000,
+    queryFn: async () => {
+      const [{ data: profiles }, dirPlayers, deposits, { data: withdrawals }] = await Promise.all([
+        supabase.from("profiles").select("*").order("updated_at", { ascending: false }),
+        fetchAllRegisteredPlayers(),
+        fetchDeposits(),
+        supabase.from("withdrawals").select("*").order("created_at", { ascending: false }),
+      ]);
+
+      const map = new Map<
+        string,
+        {
+          id: string;
+          profileId?: string;
+          pseudo: string;
+          coins: number;
+          xp: number;
+          level: number;
+          gamesPlayed: number;
+          bestScore: number;
+          online: boolean;
+          updatedAt: string;
+        }
+      >();
+
+      for (const dp of dirPlayers) {
+        map.set(dp.id, {
+          id: dp.id,
+          pseudo: dp.pseudo,
+          coins: dp.coins ?? 0,
+          xp: dp.xp ?? 0,
+          level: dp.level || 1,
+          gamesPlayed: dp.gamesPlayed ?? 0,
+          bestScore: 0,
+          online: Boolean(dp.online),
+          updatedAt: dp.updatedAt,
+        });
+      }
+
+      for (const d of deposits) {
+        const key = d.user_id || d.player_id;
+        if (key && !map.has(key)) {
+          map.set(key, {
+            id: key,
+            profileId: d.user_id ?? undefined,
+            pseudo: d.full_name || `Joueur_${key.slice(0, 5)}`,
+            coins: 0,
+            xp: 0,
+            level: 1,
+            gamesPlayed: 0,
+            bestScore: 0,
+            online: false,
+            updatedAt: d.created_at,
+          });
+        }
+      }
+
+      for (const w of withdrawals ?? []) {
+        const key = w.user_id || w.player_id;
+        if (key && !map.has(key)) {
+          map.set(key, {
+            id: key,
+            profileId: w.user_id ?? undefined,
+            pseudo: w.full_name || `Joueur_${key.slice(0, 5)}`,
+            coins: 0,
+            xp: 0,
+            level: w.level || 1,
+            gamesPlayed: 0,
+            bestScore: 0,
+            online: false,
+            updatedAt: w.created_at,
+          });
+        }
+      }
+
+      for (const pr of profiles ?? []) {
+        const lvl = Math.floor(Math.sqrt((pr.xp ?? 0) / 250)) + 1;
+        const key = pr.device_id || pr.id;
+        map.set(key, {
+          id: key,
+          profileId: pr.id,
+          pseudo: pr.display_name?.trim() || `User_${pr.id.slice(0, 6)}`,
+          coins: pr.coins ?? 0,
+          xp: pr.xp ?? 0,
+          level: lvl,
+          gamesPlayed: pr.games_played ?? 0,
+          bestScore: pr.best_score ?? 0,
+          online: Date.now() - new Date(pr.updated_at).getTime() < 10 * 60 * 1000,
+          updatedAt: pr.updated_at,
+        });
+      }
+
+      // Synchroniser l'annuaire Duel avec tous les vrais profils trouvés
+      const realDir = Array.from(map.values()).map((u) => ({
+        id: u.id,
+        pseudo: u.pseudo,
+        level: u.level,
+        coins: u.coins,
+        xp: u.xp,
+        gamesPlayed: u.gamesPlayed,
+        online: u.online,
+        updatedAt: u.updatedAt,
+      }));
+      try {
+        await supabase.from("app_settings").upsert({
+          key: "players_directory_json",
+          value: JSON.stringify(realDir.slice(0, 200)),
+          updated_at: new Date().toISOString(),
+        });
+      } catch {
+        // ignore
+      }
+
+      return Array.from(map.values()).sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1));
+    },
+  });
+
+  const handleUpdateUserCoins = async (
+    user: { id: string; profileId?: string; pseudo: string },
+    newCoins: number,
+  ) => {
+    const clean = Math.max(0, Math.round(newCoins));
+    if (user.profileId) {
+      const { error } = await supabase
+        .from("profiles")
+        .update({ coins: clean, updated_at: new Date().toISOString() })
+        .eq("id", user.profileId);
+      if (error) return void toast.error(error.message);
+    }
+    toast.success(`Solde de ${user.pseudo} mis à jour : ${clean} GDS ✅`);
+    await broadcastAdminUpdate();
+    qc.invalidateQueries({ queryKey: ["admin", "users"] });
+  };
+
+  const filtered = users.filter(
+    (u) =>
+      u.pseudo.toLowerCase().includes(search.trim().toLowerCase()) ||
+      u.id.toLowerCase().includes(search.trim().toLowerCase()),
+  );
+
+  return (
+    <div className="space-y-3 pt-2">
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl bg-card p-4">
+        <div>
+          <h3 className="flex items-center gap-2 font-extrabold text-primary">
+            <Users className="h-4 w-4" /> Vrais Utilisateurs du site ({users.length})
+          </h3>
+          <p className="text-xs text-muted-foreground">
+            Liste en direct des vrais comptes inscrits et joueurs actifs (synchronisée avec le mode
+            Duel Multijoueur).
+          </p>
+        </div>
+        <Input
+          placeholder="Rechercher un utilisateur (pseudo ou ID)…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="max-w-xs text-xs"
+        />
+      </div>
+
+      {isLoading && (
+        <p className="py-6 text-center text-xs text-muted-foreground">
+          Chargement des utilisateurs…
+        </p>
+      )}
+
+      {!isLoading && filtered.length === 0 && (
+        <p className="rounded-2xl bg-card py-8 text-center text-sm text-muted-foreground">
+          Aucun utilisateur trouvé.
+        </p>
+      )}
+
+      <div className="space-y-2">
+        {filtered.map((u) => {
+          const customVal = editingCoins[u.id] ?? String(u.coins);
+          return (
+            <div
+              key={u.id}
+              className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-card p-4 text-sm"
+            >
+              <div className="min-w-0 flex-1 space-y-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span
+                    className={`h-2.5 w-2.5 rounded-full ${
+                      u.online ? "bg-success" : "bg-muted-foreground/40"
+                    }`}
+                  />
+                  <b className="text-base">{u.pseudo}</b>
+                  <span className="rounded-full bg-primary/15 px-2 py-0.5 text-xs font-bold text-primary">
+                    Niv. {u.level} ({u.xp} XP)
+                  </span>
+                  <span className="rounded-full bg-accent/20 px-2.5 py-0.5 text-xs font-extrabold text-accent">
+                    Solde : {u.coins} GDS
+                  </span>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  ID : <code className="rounded bg-muted px-1 py-0.5 font-mono">{u.id}</code> ·{" "}
+                  Parties jouées : <b>{u.gamesPlayed}</b> · Meilleur score : <b>{u.bestScore}</b> ·{" "}
+                  Vu le {new Date(u.updatedAt).toLocaleString("fr-FR")}
+                </p>
+              </div>
+
+              {u.profileId && (
+                <div className="flex items-center gap-1.5">
+                  <Input
+                    type="number"
+                    min={0}
+                    value={customVal}
+                    onChange={(e) => setEditingCoins({ ...editingCoins, [u.id]: e.target.value })}
+                    className="h-8 w-24 text-xs font-bold"
+                  />
+                  <Button
+                    size="sm"
+                    onClick={() => handleUpdateUserCoins(u, parseInt(customVal || "0", 10))}
+                  >
+                    Fixer GDS
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={() => handleUpdateUserCoins(u, 0)}>
+                    0 GDS
+                  </Button>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function SettingsAdmin() {
   const qc = useQueryClient();
   const { data: rows = [] } = useQuery({
@@ -1263,20 +1525,26 @@ function SettingsAdmin() {
   });
   const [vals, setVals] = useState<Record<string, string>>({});
   const [resetting, setResetting] = useState(false);
+  const [uploadingMusic, setUploadingMusic] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     setVals(Object.fromEntries(rows.map((r) => [r.key, r.value ?? ""])));
   }, [rows]);
 
-  const save = async () => {
+  const save = async (override?: Record<string, string>) => {
+    setSaving(true);
+    const merged = { ...vals, ...(override ?? {}) };
     const payload = SETTING_KEYS.map(({ key }) => ({
       key,
-      value: (vals[key] ?? "").trim(),
+      value: (merged[key] ?? "").trim(),
       updated_at: new Date().toISOString(),
     }));
     const { error } = await supabase.from("app_settings").upsert(payload);
+    setSaving(false);
     if (error) return void toast.error(error.message);
-    toast.success("Réglages enregistrés");
+    toast.success("Réglages enregistrés et mis à jour en direct pour tous les utilisateurs ✅");
+    await broadcastAdminUpdate();
     qc.invalidateQueries({ queryKey: ["settings"] });
     qc.invalidateQueries({ queryKey: ["admin", "settings"] });
   };
@@ -1295,6 +1563,8 @@ function SettingsAdmin() {
         .update({ coins: 0, updated_at: new Date().toISOString() })
         .neq("id", "00000000-0000-0000-0000-000000000000");
       resetLocalBalance();
+      await broadcastAdminUpdate();
+      qc.invalidateQueries({ queryKey: ["admin", "users"] });
       toast.success("✅ Le solde GDS de tous les joueurs a été réinitialisé à 0 GDS !");
     } catch {
       toast.error("Erreur lors de la réinitialisation");
@@ -1304,8 +1574,244 @@ function SettingsAdmin() {
   };
 
   return (
-    <div className="space-y-4 pt-2">
-      {/* Bloc de réinitialisation globale des soldes GDS */}
+    <div className="space-y-5 pt-2">
+      {/* 1. MUSIQUE DE FOND DU SITE (Chanson réelle quand on ne joue pas : Maître Gims, etc.) */}
+      <div className="space-y-3 rounded-3xl border-2 border-primary/40 bg-card p-5 shadow-glow">
+        <div className="flex items-center gap-2">
+          <Music className="h-5 w-5 text-primary" />
+          <h3 className="text-base font-extrabold text-primary">
+            🎵 Musique de fond du site (quand on ne joue pas)
+          </h3>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Colle le lien d'une chanson (MP3/Audio) ou importe un fichier audio depuis ton appareil.
+          La chanson joue automatiquement en fond sur le site quand le joueur n'est pas en plein
+          quiz/duel, avec affichage des crédits du propriétaire.
+        </p>
+
+        <div className="space-y-2">
+          <Label>1. Coller un lien direct vers la chanson (URL .mp3, .m4a, .ogg ou audio)</Label>
+          <Input
+            placeholder="https://exemple.com/maitre-gims-chanson.mp3"
+            value={vals["site_bgm_url"] ?? ""}
+            onChange={(e) => setVals({ ...vals, site_bgm_url: e.target.value })}
+          />
+        </div>
+
+        <div className="space-y-2">
+          <Label className="flex items-center gap-1.5">
+            <Upload className="h-3.5 w-3.5 text-primary" /> 2. Ou uploader un fichier audio (MP3 /
+            M4A / WAV / OGG)
+          </Label>
+          <div className="flex items-center gap-2">
+            <Input
+              type="file"
+              accept="audio/*,.mp3,.m4a,.wav,.ogg"
+              disabled={uploadingMusic}
+              onChange={async (e) => {
+                const file = e.target.files?.[0];
+                if (!file) return;
+                setUploadingMusic(true);
+                try {
+                  const url = await uploadMedia(file, "music");
+                  const nextVals = {
+                    ...vals,
+                    site_bgm_url: url,
+                    site_bgm_credit:
+                      vals["site_bgm_credit"] ||
+                      file.name.replace(/\.[^.]+$/, "") + " — Crédits au propriétaire",
+                  };
+                  setVals(nextVals);
+                  await save(nextVals);
+                  toast.success("🎵 Chanson importée et activée en fond du site !");
+                } catch (err) {
+                  toast.error((err as Error).message);
+                } finally {
+                  setUploadingMusic(false);
+                }
+              }}
+            />
+            {vals["site_bgm_url"] && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  const next = { ...vals, site_bgm_url: "" };
+                  setVals(next);
+                  save(next);
+                }}
+              >
+                Retirer
+              </Button>
+            )}
+          </div>
+        </div>
+
+        <div className="space-y-2">
+          <Label>3. Crédits & Artiste affichés (ex: Maître Gims — Crédits au propriétaire)</Label>
+          <Input
+            placeholder="Ex: Maître Gims — Tous droits réservés au propriétaire"
+            value={vals["site_bgm_credit"] ?? ""}
+            onChange={(e) => setVals({ ...vals, site_bgm_credit: e.target.value })}
+          />
+        </div>
+
+        {vals["site_bgm_url"] && (
+          <div className="rounded-2xl bg-background/60 p-3 space-y-1.5">
+            <p className="text-xs font-bold text-primary">🎧 Aperçu de la chanson active :</p>
+            <audio controls src={vals["site_bgm_url"]} className="w-full h-9" />
+          </div>
+        )}
+
+        <Button onClick={() => save()} disabled={saving || uploadingMusic}>
+          {saving ? "Enregistrement…" : "🎵 Enregistrer la musique du site"}
+        </Button>
+      </div>
+
+      {/* 2. LES 2 FONCTIONS PUB MONETAG (Vignette & In-Page Push + Après Quiz/Duel) & SCRIPT <HEAD> */}
+      <div className="space-y-4 rounded-3xl border border-accent/40 bg-card p-5">
+        <div className="flex items-center gap-2">
+          <Megaphone className="h-5 w-5 text-accent" />
+          <h3 className="text-base font-extrabold text-accent">
+            📢 Publicités Monetag (2 Fonctions : Vignette & In-Page Push + Fin de Quiz/Duel)
+          </h3>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Accepte un <b>Zone ID</b> (ex: <code>11987279</code>), une <b>URL directe</b> (ex:{" "}
+          <code>https://n6wxm.com/vignette.min.js</code>), du <b>code JS</b> ou une balise{" "}
+          <b>&lt;script&gt;…&lt;/script&gt;</b> complète. Ces publicités ne bloquent jamais les
+          boutons de réponse pendant un Quiz ou un Duel et s'affichent aussi automatiquement à la
+          fin de chaque partie.
+        </p>
+
+        <div className="grid gap-3 sm:grid-cols-3">
+          <label className="flex items-center gap-2 rounded-xl border border-border bg-background/50 p-3 text-xs font-bold cursor-pointer">
+            <input
+              type="checkbox"
+              checked={(vals["monetag_vignette_enabled"] ?? "true") !== "false"}
+              onChange={(e) =>
+                setVals({ ...vals, monetag_vignette_enabled: e.target.checked ? "true" : "false" })
+              }
+            />
+            Activer Fonction 1 : Pub Vignette
+          </label>
+          <label className="flex items-center gap-2 rounded-xl border border-border bg-background/50 p-3 text-xs font-bold cursor-pointer">
+            <input
+              type="checkbox"
+              checked={(vals["monetag_inpage_enabled"] ?? "true") !== "false"}
+              onChange={(e) =>
+                setVals({ ...vals, monetag_inpage_enabled: e.target.checked ? "true" : "false" })
+              }
+            />
+            Activer Fonction 2 : Pub In-Push
+          </label>
+          <label className="flex items-center gap-2 rounded-xl border border-primary/40 bg-primary/10 p-3 text-xs font-bold cursor-pointer">
+            <input
+              type="checkbox"
+              checked={(vals["monetag_postgame_enabled"] ?? "true") !== "false"}
+              onChange={(e) =>
+                setVals({ ...vals, monetag_postgame_enabled: e.target.checked ? "true" : "false" })
+              }
+            />
+            Pub après chaque Quiz & Duel
+          </label>
+        </div>
+
+        <div className="space-y-2">
+          <Label>
+            Fonction Pub 1 — Vignette Banner (Zone ID ex: 11987279, Lien URL ou Script complet)
+          </Label>
+          <Textarea
+            rows={2}
+            className="font-mono text-xs"
+            placeholder="11987279 ou <script>(function(s){s.dataset.zone='11987279',s.src='https://n6wxm.com/vignette.min.js'})(...)</script>"
+            value={vals["monetag_vignette_zone"] ?? ""}
+            onChange={(e) => setVals({ ...vals, monetag_vignette_zone: e.target.value })}
+          />
+        </div>
+
+        <div className="space-y-2">
+          <Label>
+            Fonction Pub 2 — In-Page Push / In-Push (Zone ID, Lien URL, Code JS ou &lt;script&gt;)
+          </Label>
+          <Textarea
+            rows={3}
+            className="font-mono text-xs"
+            placeholder="Colle ici ton Zone ID, ton URL ou ton script Monetag In-Page Push (In-Push)…"
+            value={vals["monetag_inpage_script"] ?? ""}
+            onChange={(e) => setVals({ ...vals, monetag_inpage_script: e.target.value })}
+          />
+        </div>
+
+        <div className="space-y-2">
+          <Label>Jeton de validation Monetag (&lt;meta name="monetag"&gt;)</Label>
+          <Input
+            placeholder="59029dc25ef25e3de878e23f259217d6"
+            value={vals["monetag_meta"] ?? ""}
+            onChange={(e) => setVals({ ...vals, monetag_meta: e.target.value })}
+          />
+        </div>
+
+        <div className="space-y-2">
+          <Label>
+            Script / Code / Lien &lt;head&gt; personnalisé (accepte URL, lien, &lt;meta&gt;,
+            &lt;script&gt;, HTML ou JS)
+          </Label>
+          <Textarea
+            rows={4}
+            className="font-mono text-xs"
+            placeholder="Colle ici n'importe quel script <head>, balise <meta>, lien URL ou code JS…"
+            value={vals["head_script"] ?? ""}
+            onChange={(e) => setVals({ ...vals, head_script: e.target.value })}
+          />
+        </div>
+
+        <Button onClick={() => save()} disabled={saving}>
+          {saving ? "Enregistrement…" : "📢 Enregistrer les fonctions Publicités & <head>"}
+        </Button>
+      </div>
+
+      {/* 3. AUTRES RÉGLAGES DU SITE (WhatsApp, Dépôt min, Retrait min, AdSense) */}
+      <div className="space-y-3 rounded-2xl bg-card p-4">
+        <h3 className="font-extrabold">⚙️ Réglages généraux du site</h3>
+        {SETTING_KEYS.filter(
+          (k) =>
+            ![
+              "site_bgm_url",
+              "site_bgm_credit",
+              "monetag_meta",
+              "monetag_vignette_enabled",
+              "monetag_vignette_zone",
+              "monetag_inpage_enabled",
+              "monetag_inpage_script",
+              "monetag_postgame_enabled",
+              "head_script",
+            ].includes(k.key),
+        ).map(({ key, label }) => (
+          <div key={key}>
+            <Label>{label}</Label>
+            {key === "deposit_instructions" ? (
+              <Textarea
+                rows={3}
+                className="text-xs"
+                value={vals[key] ?? ""}
+                onChange={(e) => setVals({ ...vals, [key]: e.target.value })}
+              />
+            ) : (
+              <Input
+                value={vals[key] ?? ""}
+                onChange={(e) => setVals({ ...vals, [key]: e.target.value })}
+              />
+            )}
+          </div>
+        ))}
+        <Button onClick={() => save()} disabled={saving}>
+          Enregistrer tous les réglages
+        </Button>
+      </div>
+
+      {/* 4. Bloc de réinitialisation globale des soldes GDS */}
       <div className="rounded-2xl border border-destructive/40 bg-destructive/10 p-4 space-y-2">
         <h3 className="font-extrabold text-destructive">
           🔄 Réinitialisation globale du solde GDS des joueurs
@@ -1324,28 +1830,9 @@ function SettingsAdmin() {
         </Button>
       </div>
 
-      <div className="space-y-3 rounded-2xl bg-card p-4">
-        {SETTING_KEYS.map(({ key, label }) => (
-          <div key={key}>
-            <Label>{label}</Label>
-            {key === "head_script" ||
-            key === "monetag_inpage_script" ||
-            key === "deposit_instructions" ? (
-              <Textarea
-                rows={4}
-                className="font-mono text-xs"
-                value={vals[key] ?? ""}
-                onChange={(e) => setVals({ ...vals, [key]: e.target.value })}
-              />
-            ) : (
-              <Input
-                value={vals[key] ?? ""}
-                onChange={(e) => setVals({ ...vals, [key]: e.target.value })}
-              />
-            )}
-          </div>
-        ))}
-        <Button onClick={save}>Enregistrer les réglages</Button>
+      {/* 5. Liste directe des utilisateurs dans Réglages Admin */}
+      <div className="border-t border-border pt-4">
+        <UsersAdmin />
       </div>
     </div>
   );

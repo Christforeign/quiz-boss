@@ -19,6 +19,7 @@ import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { CATEGORIES, shareWhatsApp } from "@/lib/categories";
 import { addQuizPoints, getPlayer, levelFromXp } from "@/lib/player";
+import { triggerPostGameMonetagAd, useSettings } from "@/lib/site";
 import { sfx, useQuizBgm } from "@/lib/sound";
 import { MuteButton } from "@/components/MuteButton";
 import { AdSlot, LocalBanner } from "@/components/Ads";
@@ -301,6 +302,7 @@ function Game({
   const [usedTime, setUsedTime] = useState(false);
   const [usedShield, setUsedShield] = useState(false);
 
+  const { data: settings } = useSettings();
   const startLevel = useRef(levelFromXp(getPlayer().xp));
   const q = questions[idx]!;
 
@@ -431,6 +433,7 @@ function Game({
       score,
       `Quiz Solo ${modeConfig.label} · ${cat.label} (${correct}/${questions.length})`,
     );
+    triggerPostGameMonetagAd(settings);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [done]);
 

@@ -13,7 +13,9 @@ declare global {
 function useActiveBanners() {
   return useQuery({
     queryKey: ["banners", "all-active"],
-    staleTime: 30 * 1000,
+    staleTime: 0,
+    refetchInterval: 8000,
+    refetchOnWindowFocus: true,
     queryFn: async () => {
       const { data } = await supabase
         .from("banners")

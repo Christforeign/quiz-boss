@@ -236,8 +236,141 @@ export function stopBgm() {
   }
 }
 
+/* ---------- Musique de fond du site (Chanson réelle quand on ne joue pas) ---------- */
+
+let gameActiveCount = 0;
+let siteAudio: HTMLAudioElement | null = null;
+let currentSongUrl = "";
+let siteMusicPausedByUser = false;
+let siteMusicPlaying = false;
+
+function notifyAudioSubs() {
+  subs.forEach((s) => s());
+}
+
+export function useIsGameActive() {
+  return useSyncExternalStore(
+    (cb) => {
+      subs.add(cb);
+      return () => subs.delete(cb);
+    },
+    () => gameActiveCount > 0,
+    () => false,
+  );
+}
+
+export function useSiteMusicPlaying() {
+  return useSyncExternalStore(
+    (cb) => {
+      subs.add(cb);
+      return () => subs.delete(cb);
+    },
+    () => siteMusicPlaying,
+    () => false,
+  );
+}
+
+export function toggleSiteMusic() {
+  if (!siteAudio || !currentSongUrl) return;
+  if (isMuted()) {
+    toggleMute();
+  }
+  if (siteAudio.paused) {
+    siteMusicPausedByUser = false;
+    siteAudio
+      .play()
+      .then(() => {
+        siteMusicPlaying = true;
+        notifyAudioSubs();
+      })
+      .catch(() => {});
+  } else {
+    siteMusicPausedByUser = true;
+    siteAudio.pause();
+    siteMusicPlaying = false;
+    notifyAudioSubs();
+  }
+}
+
+function syncSiteAudioPlayback() {
+  if (typeof window === "undefined") return;
+  if (!currentSongUrl || isMuted() || gameActiveCount > 0 || siteMusicPausedByUser) {
+    if (siteAudio && !siteAudio.paused) {
+      siteAudio.pause();
+      siteMusicPlaying = false;
+      notifyAudioSubs();
+    }
+    return;
+  }
+
+  if (!siteAudio) {
+    siteAudio = new Audio();
+    siteAudio.loop = true;
+    siteAudio.volume = 0.45;
+    siteAudio.preload = "auto";
+    siteAudio.addEventListener("play", () => {
+      siteMusicPlaying = true;
+      notifyAudioSubs();
+    });
+    siteAudio.addEventListener("pause", () => {
+      siteMusicPlaying = false;
+      notifyAudioSubs();
+    });
+  }
+
+  if (siteAudio.src !== currentSongUrl) {
+    siteAudio.src = currentSongUrl;
+  }
+
+  if (siteAudio.paused) {
+    siteAudio
+      .play()
+      .then(() => {
+        siteMusicPlaying = true;
+        notifyAudioSubs();
+      })
+      .catch(() => {
+        // Autoplay bloqué avant le premier clic : démarrer dès la première interaction
+        const resumeOnInteract = () => {
+          if (currentSongUrl && !isMuted() && gameActiveCount === 0 && !siteMusicPausedByUser) {
+            siteAudio?.play().catch(() => {});
+          }
+          window.removeEventListener("pointerdown", resumeOnInteract);
+          window.removeEventListener("keydown", resumeOnInteract);
+        };
+        window.addEventListener("pointerdown", resumeOnInteract, { once: true });
+        window.addEventListener("keydown", resumeOnInteract, { once: true });
+      });
+  }
+}
+
+export function useSiteBgm(songUrl?: string) {
+  const isAudioMuted = useMuted();
+  const inGame = useIsGameActive();
+
+  useEffect(() => {
+    currentSongUrl = (songUrl ?? "").trim();
+    syncSiteAudioPlayback();
+  }, [songUrl, isAudioMuted, inGame]);
+}
+
 export function useQuizBgm(active: boolean, intense = false) {
   const isAudioMuted = useMuted();
+
+  useEffect(() => {
+    if (active) {
+      gameActiveCount++;
+      notifyAudioSubs();
+      syncSiteAudioPlayback();
+      return () => {
+        gameActiveCount = Math.max(0, gameActiveCount - 1);
+        notifyAudioSubs();
+        syncSiteAudioPlayback();
+      };
+    }
+    return undefined;
+  }, [active]);
+
   useEffect(() => {
     if (active && !isAudioMuted) {
       startBgm(intense);

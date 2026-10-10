@@ -123,19 +123,6 @@ function RootShell({ children }: { children: ReactNode }) {
     document
       .querySelectorAll('script[src*="quge5.com"], script[data-zone="228397"]')
       .forEach((el) => el.remove());
-
-    // Injecter le nouveau script Monetag Vignette Banner / In-Page Push (zone 11987279)
-    if (!document.querySelector('script[data-zone="11987279"]')) {
-      (function (s: HTMLScriptElement) {
-        s.dataset.zone = "11987279";
-        s.src = "https://n6wxm.com/vignette.min.js";
-      })(
-        [document.documentElement, document.body]
-          .filter(Boolean)
-          .pop()!
-          .appendChild(document.createElement("script")),
-      );
-    }
   }, []);
 
   return (
