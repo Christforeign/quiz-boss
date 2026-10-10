@@ -28,6 +28,7 @@ import {
   injectSmartSnippet,
   removeIntrusiveMonetag,
   MONETAG_INPAGE_DEFAULT,
+  MONETAG_DIRECT_LINK_DEFAULT,
   listDuelRooms,
   registerNotificationServiceWorker,
   registerPlayerInDirectory,
@@ -235,7 +236,26 @@ function SiteMusicBar() {
   );
 }
 
+function SponsorStrip() {
+  const { data: settings } = useSettings();
+  const url = settings?.["monetag_rewarded_url"]?.trim() || MONETAG_DIRECT_LINK_DEFAULT;
+  return (
+    <div className="mx-auto mb-3 px-4">
+      <a
+        href={url}
+        target="_blank"
+        rel="noopener noreferrer sponsored"
+        className="flex items-center justify-between gap-2 rounded-xl border border-accent/40 bg-card/80 px-3 py-2 text-xs"
+      >
+        <span className="truncate font-bold">🎁 Offre du jour sponsorisée — découvre-la</span>
+        <span className="shrink-0 rounded-full bg-accent/20 px-2 py-0.5 text-[10px] font-extrabold uppercase text-accent">Pub</span>
+      </a>
+    </div>
+  );
+}
+
 export function AppShell({ children }: { children: React.ReactNode }) {
+  const inGameBanner = useIsGameActive();
   const player = usePlayer();
   const navigate = useNavigate();
   const path = useRouterState({ select: (s) => s.location.pathname });
@@ -710,6 +730,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </div>
       )}
 
+      {!isAdmin && !inGameBanner && <SponsorStrip />}
       <main className="px-4">{children}</main>
       {!isAdmin && <Footer />}
       {!isAdmin && <SupportWidget />}

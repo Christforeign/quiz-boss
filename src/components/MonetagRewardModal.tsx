@@ -29,34 +29,41 @@ export function MonetagRewardModal({
   const [sessionCount, setSessionCount] = useState(0);
   const rewardedRef = useRef(false);
 
-  // Démarrer la pub Monetag à l'ouverture
+  const clickedAtRef = useRef<number | null>(null);
+  const [waitingReturn, setWaitingReturn] = useState(false);
+
   useEffect(() => {
     if (!open) return;
     rewardedRef.current = false;
+    clickedAtRef.current = null;
+    setWaitingReturn(false);
     setUnlocked(false);
     setSecondsLeft(AD_WATCH_SECONDS);
-
-    const res = triggerRewardedMonetagAd(settings);
-    setDirectLinkUrl(res.directLinkUrl);
+    setDirectLinkUrl(triggerRewardedMonetagAd(settings).directLinkUrl);
   }, [open, sessionCount, settings]);
 
-  // Compte à rebours de visionnage de l'annonce sponsorisée
+  // Détecte le retour du joueur sur le site après avoir ouvert la pub
   useEffect(() => {
-    if (!open || unlocked) return;
-    if (secondsLeft <= 0) {
-      if (!rewardedRef.current) {
-        rewardedRef.current = true;
-        unlockOneDuelByAd();
-        setUnlocked(true);
-        toast.success("🎁 +1 Partie Duel Gratuite débloquée !");
-      }
-      return;
-    }
-    const timer = setTimeout(() => {
-      setSecondsLeft((s) => s - 1);
-    }, 1000);
-    return () => clearTimeout(timer);
-  }, [open, secondsLeft, unlocked]);
+    if (!open) return;
+    const check = () => {
+      if (document.visibilityState !== "visible" || clickedAtRef.current == null) return;
+      if (Date.now() - clickedAtRef.current >= 3000) handleInstantUnlockViaLink();
+    };
+    document.addEventListener("visibilitychange", check);
+    window.addEventListener("focus", check);
+    return () => {
+      document.removeEventListener("visibilitychange", check);
+      window.removeEventListener("focus", check);
+    };
+  });
+
+  // Filet de sécurité : déblocage après le compte à rebours une fois le lien cliqué
+  useEffect(() => {
+    if (!open || unlocked || !waitingReturn) return;
+    if (secondsLeft <= 0) return handleInstantUnlockViaLink();
+    const t = setTimeout(() => setSecondsLeft((x) => x - 1), 1000);
+    return () => clearTimeout(t);
+  }, [open, secondsLeft, unlocked, waitingReturn]);
 
   if (!open) return null;
 
@@ -124,38 +131,28 @@ export function MonetagRewardModal({
         <div className="space-y-3 rounded-2xl border border-border bg-background/70 p-4">
           {!unlocked ? (
             <div className="space-y-3 text-center">
-              <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-primary/15 text-primary">
-                <Loader2 className="h-7 w-7 animate-spin" />
-              </div>
-              <div className="space-y-1">
-                <p className="text-sm font-extrabold">
-                  Annonce sponsorisée en cours… ({secondsLeft}s)
-                </p>
+              <p className="text-sm font-extrabold">
+                {waitingReturn
+                  ? "Reviens ici après la pub : ta partie se débloque automatiquement ✅"
+                  : "Touche le bouton, regarde la pub puis reviens sur QuizBoss."}
+              </p>
+              <a
+                href={directLinkUrl}
+                target="_blank"
+                rel="noopener noreferrer sponsored"
+                onClick={() => {
+                  sfx.click();
+                  clickedAtRef.current = Date.now();
+                  setWaitingReturn(true);
+                }}
+                className="flex w-full items-center justify-center gap-2 rounded-2xl bg-grad-lime py-4 text-base font-extrabold text-primary-foreground shadow-glow active:scale-95"
+              >
+                <ExternalLink className="h-5 w-5" /> 🎬 Regarder la pub & débloquer
+              </a>
+              {waitingReturn && (
                 <p className="text-xs text-muted-foreground">
-                  Patiente quelques secondes : ta partie Duel Gratuite se débloque automatiquement à
-                  la fin du compte à rebours.
+                  Déblocage automatique dans {secondsLeft}s…
                 </p>
-              </div>
-
-              {/* Barre de progression */}
-              <div className="h-2.5 w-full overflow-hidden rounded-full bg-muted">
-                <div
-                  className="h-full rounded-full bg-grad-lime transition-all duration-500"
-                  style={{ width: `${progressPct}%` }}
-                />
-              </div>
-
-              {directLinkUrl && (
-                <div className="overflow-hidden rounded-xl border border-border bg-muted">
-                  <iframe
-                    key={sessionCount}
-                    src={directLinkUrl}
-                    title="Annonce sponsorisée"
-                    className="h-64 w-full"
-                    sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
-                    referrerPolicy="no-referrer-when-downgrade"
-                  />
-                </div>
               )}
             </div>
           ) : (
@@ -178,12 +175,7 @@ export function MonetagRewardModal({
         </div>
 
         {/* Boutons d'action */}
-        {!unlocked ? (
-          <Button disabled size="lg" className="w-full font-extrabold">
-            <Loader2 className="h-4 w-4 animate-spin" /> Déblocage de la partie gratuite dans{" "}
-            {secondsLeft}s…
-          </Button>
-        ) : (
+        {!unlocked ? null        ) : (
           <div className="space-y-2">
             <Button
               size="lg"
