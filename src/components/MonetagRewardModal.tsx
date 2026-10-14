@@ -47,7 +47,7 @@ export function MonetagRewardModal({
     if (!open) return;
     const check = () => {
       if (document.visibilityState !== "visible" || clickedAtRef.current == null) return;
-      if (Date.now() - clickedAtRef.current >= 3000) handleInstantUnlockViaLink();
+      if (Date.now() - clickedAtRef.current >= 1500) handleInstantUnlockViaLink();
     };
     document.addEventListener("visibilitychange", check);
     window.addEventListener("focus", check);
@@ -57,13 +57,6 @@ export function MonetagRewardModal({
     };
   });
 
-  // Filet de sécurité : déblocage après le compte à rebours une fois le lien cliqué
-  useEffect(() => {
-    if (!open || unlocked || !waitingReturn) return;
-    if (secondsLeft <= 0) return handleInstantUnlockViaLink();
-    const t = setTimeout(() => setSecondsLeft((x) => x - 1), 1000);
-    return () => clearTimeout(t);
-  }, [open, secondsLeft, unlocked, waitingReturn]);
 
   if (!open) return null;
 

@@ -1691,6 +1691,7 @@ function Game({
     );
   }
 
+  if (!q) return null;
   const diff = difficultyBadge(q.difficulty ?? 2);
 
   return (
