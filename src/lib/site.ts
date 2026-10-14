@@ -133,7 +133,9 @@ export async function broadcastAdminUpdate() {
 export async function uploadMedia(file: File, folder: string) {
   const isAudio = file.type.startsWith("audio/") || /\.(mp3|m4a|wav|ogg|aac)$/i.test(file.name);
   if (isAudio && file.size > 10 * 1024 * 1024) {
-    throw new Error("Chanson trop lourde (max 10 Mo). Compresse-la en MP3 ou colle un lien direct.");
+    throw new Error(
+      "Chanson trop lourde (max 10 Mo). Compresse-la en MP3 ou colle un lien direct.",
+    );
   }
   try {
     const ext = file.name.split(".").pop()?.toLowerCase() || "bin";
@@ -989,7 +991,8 @@ export type DuelRoom = {
   visibility: "public" | "private";
   targetPseudo?: string;
   invitedPseudos?: string[];
-  status: "waiting" | "playing" | "finished";
+  status: "waiting" | "playing" | "finished" | "cancelled";
+  gameplayMode?: "reflex" | "turn_based";
   players: DuelParticipant[];
   questionIds: string[];
   questions?: DuelRoomQuestion[];
@@ -1021,7 +1024,8 @@ function writeLocalRooms(rooms: DuelRoom[]) {
 
 /** Défi direct/privé : 60 s ; duel public : 3 min. Au-delà, ou en cours/terminé, il quitte le lobby. */
 export function roomTtlMs(r: DuelRoom): number {
-  const direct = !!r.targetPseudo || (r.invitedPseudos?.length ?? 0) > 0 || r.visibility === "private";
+  const direct =
+    !!r.targetPseudo || (r.invitedPseudos?.length ?? 0) > 0 || r.visibility === "private";
   return direct ? 60_000 : 180_000;
 }
 export function isRoomOpen(r: DuelRoom, now = Date.now()): boolean {
@@ -1154,6 +1158,69 @@ export async function saveDuelRoom(room: DuelRoom): Promise<DuelRoom> {
     // ignore
   }
   return stamped;
+}
+
+export async function cancelDuelRoom(roomCode: string, hostId: string): Promise<boolean> {
+  const rooms = await listDuelRooms();
+  const room = rooms.find((r) => r.code === roomCode);
+  if (!room || room.hostId !== hostId) return false;
+
+  const cancelledRoom: DuelRoom = {
+    ...room,
+    status: "cancelled",
+    updatedAt: new Date().toISOString(),
+  };
+
+  const updatedRooms = rooms.filter((r) => r.code !== roomCode);
+  writeLocalRooms(updatedRooms);
+
+  try {
+    await supabase.from("app_settings").upsert({
+      key: SETTINGS_ROOMS_KEY,
+      value: JSON.stringify(updatedRooms),
+      updated_at: new Date().toISOString(),
+    });
+  } catch {
+    // ignore
+  }
+
+  try {
+    const ch = supabase.channel(`quizboss-room-${roomCode}`);
+    ch.subscribe((status) => {
+      if (status === "SUBSCRIBED") {
+        ch.send({
+          type: "broadcast",
+          event: "room-cancelled",
+          payload: { roomCode },
+        }).finally(() => {
+          setTimeout(() => supabase.removeChannel(ch), 600);
+        });
+      }
+    });
+  } catch {
+    // ignore
+  }
+
+  try {
+    const lobbyCh = supabase.channel("quizboss-duel-lobby");
+    lobbyCh.subscribe((status) => {
+      if (status === "SUBSCRIBED") {
+        lobbyCh
+          .send({
+            type: "broadcast",
+            event: "room-updated",
+            payload: { room: cancelledRoom },
+          })
+          .finally(() => {
+            setTimeout(() => supabase.removeChannel(lobbyCh), 600);
+          });
+      }
+    });
+  } catch {
+    // ignore
+  }
+
+  return true;
 }
 
 /* ---------- Notifications Système Cross-Platform (Android, iOS, Windows, Mac) ---------- */

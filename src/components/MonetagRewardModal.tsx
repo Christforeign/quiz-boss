@@ -4,7 +4,6 @@ import { toast } from "sonner";
 import { unlockOneDuelByAd } from "@/lib/player";
 import { triggerRewardedMonetagAd, useSettings } from "@/lib/site";
 import { sfx } from "@/lib/sound";
-import { AdSlot } from "@/components/Ads";
 import { Button } from "@/components/ui/button";
 
 const AD_WATCH_SECONDS = 7;
@@ -57,7 +56,6 @@ export function MonetagRewardModal({
     };
   });
 
-
   if (!open) return null;
 
   const progressPct = Math.min(
@@ -90,19 +88,27 @@ export function MonetagRewardModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm animate-pop">
-      <div className="relative w-full max-w-md space-y-4 rounded-3xl border-2 border-primary bg-card p-5 shadow-2xl">
-        {/* En-tête */}
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-3 sm:p-4 backdrop-blur-sm animate-pop"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) {
+          sfx.click();
+          onClose();
+        }
+      }}
+    >
+      <div className="relative w-full max-w-sm space-y-3.5 rounded-3xl border-2 border-primary bg-card p-4 sm:p-5 shadow-2xl">
+        {/* En-tête ultra-compact */}
         <div className="flex items-start justify-between gap-2">
           <div className="flex items-center gap-2.5">
-            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-grad-candy text-secondary-foreground shadow-glow">
-              <Film className="h-6 w-6" />
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-grad-candy text-secondary-foreground shadow-glow">
+              <Film className="h-5 w-5" />
             </div>
             <div>
-              <span className="inline-flex items-center gap-1 rounded-full bg-primary/15 px-2.5 py-0.5 text-[10px] font-extrabold uppercase tracking-wider text-primary">
+              <span className="inline-flex items-center gap-1 rounded-full bg-primary/15 px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wider text-primary">
                 <Sparkles className="h-3 w-3" /> Accès Sponsorisé · Duel Gratuit
               </span>
-              <h3 className="mt-0.5 text-lg font-extrabold leading-tight">
+              <h3 className="text-base font-extrabold leading-tight">
                 {unlocked
                   ? "🎉 Partie Duel Gratuite Débloquée !"
                   : "🎬 Déblocage de ta Partie Gratuite"}
@@ -112,22 +118,26 @@ export function MonetagRewardModal({
 
           <button
             type="button"
-            onClick={onClose}
+            onClick={(e) => {
+              e.stopPropagation();
+              sfx.click();
+              onClose();
+            }}
             aria-label="Fermer"
-            className="rounded-full bg-muted p-1.5 text-muted-foreground hover:bg-muted/80 hover:text-foreground"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground hover:bg-muted/80 hover:text-foreground active:scale-90 transition-transform cursor-pointer"
           >
-            <X className="h-4 w-4" />
+            <X className="h-5 w-5" />
           </button>
         </div>
 
-        {/* Zone d'affichage de l'annonce sponsorisée */}
-        <div className="space-y-3 rounded-2xl border border-border bg-background/70 p-4">
+        {/* Zone d'action publicitaire ultra-compacte sans scroll */}
+        <div className="rounded-2xl border border-border bg-background/70 p-3 sm:p-4">
           {!unlocked ? (
             <div className="space-y-3 text-center">
-              <p className="text-sm font-extrabold">
+              <p className="text-xs sm:text-sm font-extrabold leading-snug">
                 {waitingReturn
                   ? "Reviens ici après la pub : ta partie se débloque automatiquement ✅"
-                  : "Touche le bouton, regarde la pub puis reviens sur QuizBoss."}
+                  : "Touche le bouton vert, regarde la pub puis reviens sur QuizBoss."}
               </p>
               <a
                 href={directLinkUrl}
@@ -138,37 +148,33 @@ export function MonetagRewardModal({
                   clickedAtRef.current = Date.now();
                   setWaitingReturn(true);
                 }}
-                className="flex w-full items-center justify-center gap-2 rounded-2xl bg-grad-lime py-4 text-base font-extrabold text-primary-foreground shadow-glow active:scale-95"
+                className="flex w-full items-center justify-center gap-2 rounded-2xl bg-grad-lime py-3.5 text-sm sm:text-base font-extrabold text-primary-foreground shadow-glow active:scale-95 transition-transform"
               >
                 <ExternalLink className="h-5 w-5" /> 🎬 Regarder la pub & débloquer
               </a>
             </div>
           ) : (
-            <div className="space-y-2 py-2 text-center animate-pop">
-              <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-success/20 text-success">
-                <CheckCircle2 className="h-8 w-8" />
+            <div className="space-y-1.5 py-1 text-center animate-pop">
+              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-success/20 text-success">
+                <CheckCircle2 className="h-7 w-7" />
               </div>
-              <p className="text-base font-extrabold text-success">
+              <p className="text-sm sm:text-base font-extrabold text-success">
                 +1 Partie Duel Gratuite ajoutée à ton compte !
               </p>
               <p className="text-xs text-muted-foreground">
-                Ta partie gratuite est prête. Tu peux lancer ton Duel dès maintenant ou débloquer
-                une partie supplémentaire !
+                Ta partie gratuite est prête. Tu peux lancer ton Duel immédiatement !
               </p>
             </div>
           )}
-
-          {/* Emplacement bannière / flyer sponsorisé */}
-          <AdSlot slot="duel-bottom" />
         </div>
 
-        {/* Boutons d'action */}
+        {/* Boutons d'action après déblocage */}
         {unlocked && (
           <div className="space-y-2">
             <Button
               size="lg"
               onClick={handleConfirmContinue}
-              className="w-full bg-success text-base font-extrabold text-primary-foreground shadow-glow hover:bg-success/90"
+              className="w-full bg-success text-sm sm:text-base font-extrabold text-primary-foreground shadow-glow hover:bg-success/90 h-12"
             >
               <Play className="h-5 w-5" />
               {actionLabel || "🎁 Utiliser ma Partie Duel Gratuite maintenant"}

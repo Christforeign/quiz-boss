@@ -1,4 +1,5 @@
 export const CATEGORIES = [
+  { id: "amour", label: "Amour & Relations", emoji: "❤️", grad: "bg-grad-candy", color: "#F43F5E" },
   { id: "musique", label: "Musique & TikTok", emoji: "🎵", grad: "bg-grad-candy" },
   { id: "geographie", label: "Géographie & Monde", emoji: "🌍", grad: "bg-grad-ocean" },
   { id: "culture", label: "Culture Générale", emoji: "🧠", grad: "bg-grad-lime" },

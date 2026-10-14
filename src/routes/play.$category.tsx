@@ -474,7 +474,8 @@ function Game({
     const lvl = levelFromXp(p.xp);
     const ko = lives <= 0;
     const ratio = correct / Math.max(1, questions.length);
-    const link = `${window.location.origin}/?ref=${p.id}`;
+    const origin = typeof window !== "undefined" ? window.location.origin : "";
+    const link = `${origin}/?ref=${p.id}`;
     const text = `🔥 J'ai fait ${score} pts (${correct}/${questions.length}) en mode ${modeConfig.label} (${cat.label}) sur QuizBoss ! Niveau ${lvl} 🏆\nTu peux me battre ? 👉 ${link}`;
 
     const coachMessage =

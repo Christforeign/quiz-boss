@@ -151,7 +151,11 @@ export function addCoins(
     ].slice(0, 100),
   }));
   const me = getPlayer();
-  void import("./leaderboard").then((m) => m.submitScore("solo", me.id, me.name || "Joueur", score));
+  if (kind === "duel" && amount > 0) {
+    void import("./leaderboard").then((m) =>
+      m.submitScore("duel", me.id, me.name || "Joueur", amount),
+    );
+  }
 }
 
 /**
@@ -168,6 +172,10 @@ export function addQuizPoints(points: number, xpGain: number, score: number, lab
       ...(p.history ?? []),
     ].slice(0, 100),
   }));
+  const me = getPlayer();
+  void import("./leaderboard").then((m) =>
+    m.submitScore("solo", me.id, me.name || "Joueur", score),
+  );
 }
 
 /** Réinitialise le solde GDS local à 0. */

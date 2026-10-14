@@ -49,12 +49,15 @@ export function NotificationPrompt() {
         Activer 🔔
       </Button>
       <button
+        type="button"
         aria-label="Fermer"
-        onClick={() => {
+        onClick={(e) => {
+          e.stopPropagation();
+          sfx.click();
           localStorage.setItem("quizboss-notif-dismissed", "1");
           setShow(false);
         }}
-        className="text-muted-foreground"
+        className="text-muted-foreground hover:text-foreground p-1 rounded-full cursor-pointer active:scale-90 transition-transform"
       >
         <X className="h-4 w-4" />
       </button>

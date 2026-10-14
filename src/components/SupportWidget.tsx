@@ -148,9 +148,9 @@ export function SupportWidget() {
   };
 
   return (
-    <div className="fixed bottom-20 right-4 z-50 flex flex-col items-end gap-2">
+    <div className="fixed bottom-20 right-3 z-40 flex flex-col items-end gap-2 pointer-events-auto">
       {open && (
-        <div className="flex w-[320px] sm:w-[350px] flex-col overflow-hidden rounded-3xl border border-primary/30 bg-card shadow-2xl animate-pop">
+        <div className="flex w-[calc(100vw-1.5rem)] max-w-[340px] sm:max-w-[360px] flex-col overflow-hidden rounded-3xl border border-primary/30 bg-card shadow-2xl animate-pop">
           {/* Header */}
           <div className="flex items-center justify-between bg-grad-ocean px-4 py-3 text-secondary-foreground">
             <div className="flex items-center gap-2">
@@ -167,8 +167,12 @@ export function SupportWidget() {
             </div>
             <button
               type="button"
-              onClick={() => setOpen(false)}
-              className="rounded-full bg-background/20 p-1.5 transition-transform active:scale-90"
+              onClick={(e) => {
+                e.stopPropagation();
+                sfx.click();
+                setOpen(false);
+              }}
+              className="rounded-full bg-background/20 p-1.5 transition-transform active:scale-90 cursor-pointer hover:bg-background/30"
               aria-label="Fermer le support"
             >
               <X className="h-4 w-4" />
@@ -283,16 +287,17 @@ export function SupportWidget() {
       <button
         type="button"
         aria-label="Ouvrir le support en direct"
-        onClick={() => {
+        onClick={(e) => {
+          e.stopPropagation();
           sfx.click();
           setOpen((v) => !v);
         }}
-        className="relative flex h-13 items-center gap-2 rounded-full bg-grad-ocean px-4 py-3 text-xs font-extrabold text-secondary-foreground shadow-xl transition-transform active:scale-95"
+        className="relative flex h-11 items-center gap-1.5 rounded-full bg-grad-ocean px-3.5 py-2 text-xs font-extrabold text-secondary-foreground shadow-xl transition-transform active:scale-95 cursor-pointer border border-white/20 hover:brightness-105"
       >
-        {open ? <X className="h-5 w-5" /> : <MessageCircle className="h-5 w-5" />}
-        <span>Support</span>
+        {open ? <X className="h-4 w-4" /> : <MessageCircle className="h-4 w-4" />}
+        <span className="hidden sm:inline">Support</span>
         {unreadCount > 0 && (
-          <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-destructive px-1.5 text-[10px] font-extrabold text-destructive-foreground animate-bounce">
+          <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-extrabold text-destructive-foreground animate-bounce">
             {unreadCount}
           </span>
         )}

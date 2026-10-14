@@ -1857,16 +1857,17 @@ function SettingsAdmin() {
                 setUploadingMusic(true);
                 try {
                   const url = await uploadMedia(file, "music");
+                  const nextCredit =
+                    vals["site_bgm_credit"] ||
+                    file.name.replace(/\.[^.]+$/, "") + " — Crédits au propriétaire";
                   const nextVals = {
                     ...vals,
-                    site_bgm_url: url,
-                    site_bgm_credit:
-                      vals["site_bgm_credit"] ||
-                      file.name.replace(/\.[^.]+$/, "") + " — Crédits au propriétaire",
+                    site_bgm_url: url.startsWith("blob:") ? "" : url,
+                    site_bgm_credit: nextCredit,
                   };
-                  setVals(nextVals);
+                  setVals({ ...vals, site_bgm_url: url, site_bgm_credit: nextCredit });
                   await save(nextVals);
-                  toast.success("🎵 Chanson importée et activée en fond du site !");
+                  toast.success("🎵 Chanson importée et ajoutée à la bibliothèque audio du site !");
                 } catch (err) {
                   toast.error((err as Error).message);
                 } finally {
@@ -1962,9 +1963,7 @@ function SettingsAdmin() {
         </div>
 
         <div className="space-y-2">
-          <Label>
-            Vignette Banner — DÉSACTIVÉE (détournait les clics des boutons, ignorée)
-          </Label>
+          <Label>Vignette Banner — DÉSACTIVÉE (détournait les clics des boutons, ignorée)</Label>
           <Textarea
             rows={2}
             className="font-mono text-xs"

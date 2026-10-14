@@ -1,0 +1,6 @@
+{
+  "summary": "Plan d'implémentation pour la mise à jour majeure de QuizBoss : nouvelle catégorie Amour & Relations, catalogue étendu à 365+ questions procédurales par catégorie, algorithme anti-répétition FIFO (150 dernières questions), décompte 3-2-1 synchronisé en Duel, et correction TypeScript submitScore.",
+  "updatedAt": "2026-10-14T16:52:03.146385198Z",
+  "requestFeedback": true,
+  "userFacing": true
+}

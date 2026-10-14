@@ -17,19 +17,33 @@ import { reportLovableError } from "../lib/lovable-error-reporting";
 
 function NotFoundComponent() {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background px-4">
-      <div className="max-w-md text-center">
-        <h1 className="text-7xl font-bold text-foreground">404</h1>
-        <h2 className="mt-4 text-xl font-semibold text-foreground">Page not found</h2>
+    <div className="flex min-h-[70vh] items-center justify-center bg-background px-4 py-12">
+      <div className="max-w-md text-center rounded-3xl border border-primary/30 bg-card p-6 shadow-glow">
+        <span className="text-6xl">🎮</span>
+        <h1 className="mt-3 text-4xl font-extrabold text-foreground">Partie introuvable</h1>
         <p className="mt-2 text-sm text-muted-foreground">
-          The page you're looking for doesn't exist or has been moved.
+          Cette page ou cette partie n'existe plus ou a expiré. Choisis une option ci-dessous pour
+          reprendre ton jeu immédiatement !
         </p>
-        <div className="mt-6">
+        <div className="mt-6 flex flex-col gap-2.5">
+          <Link
+            to="/play/$category"
+            params={{ category: "mix" }}
+            className="inline-flex items-center justify-center rounded-xl bg-primary px-4 py-2.5 text-sm font-extrabold text-primary-foreground transition-transform active:scale-95 shadow-glow"
+          >
+            ⚡ Reprendre le Quiz (Mix Aléatoire)
+          </Link>
+          <Link
+            to="/duel"
+            className="inline-flex items-center justify-center rounded-xl bg-secondary px-4 py-2.5 text-sm font-extrabold text-secondary-foreground transition-transform active:scale-95"
+          >
+            ⚔️ Rejoindre le Mode Duel
+          </Link>
           <Link
             to="/"
-            className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+            className="inline-flex items-center justify-center rounded-xl border border-border bg-background/50 px-4 py-2 text-xs font-semibold text-muted-foreground hover:text-foreground"
           >
-            Go home
+            🏠 Retour à l'accueil
           </Link>
         </div>
       </div>

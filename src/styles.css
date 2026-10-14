@@ -116,22 +116,63 @@
     background-color: var(--color-background);
     color: var(--color-foreground);
     font-family: var(--font-sans);
-    background-image: radial-gradient(circle at 15% -10%, oklch(0.89 0.2 128 / 0.12), transparent 40%), radial-gradient(circle at 100% 30%, oklch(0.68 0.2 25 / 0.12), transparent 40%);
+    background-image:
+      radial-gradient(circle at 15% -10%, oklch(0.89 0.2 128 / 0.12), transparent 40%),
+      radial-gradient(circle at 100% 30%, oklch(0.68 0.2 25 / 0.12), transparent 40%);
     background-attachment: fixed;
   }
-  h1, h2, h3 { font-family: var(--font-display); letter-spacing: -0.02em; }
+  h1,
+  h2,
+  h3 {
+    font-family: var(--font-display);
+    letter-spacing: -0.02em;
+  }
 }
 
-@utility shadow-glow { box-shadow: var(--shadow-glow); }
-@utility bg-grad-sunset { background-image: var(--grad-sunset); }
-@utility bg-grad-ocean { background-image: var(--grad-ocean); }
-@utility bg-grad-lime { background-image: var(--grad-lime); }
-@utility bg-grad-night { background-image: var(--grad-night); }
-@utility bg-grad-candy { background-image: var(--grad-candy); }
+@utility shadow-glow {
+  box-shadow: var(--shadow-glow);
+}
+@utility bg-grad-sunset {
+  background-image: var(--grad-sunset);
+}
+@utility bg-grad-ocean {
+  background-image: var(--grad-ocean);
+}
+@utility bg-grad-lime {
+  background-image: var(--grad-lime);
+}
+@utility bg-grad-night {
+  background-image: var(--grad-night);
+}
+@utility bg-grad-candy {
+  background-image: var(--grad-candy);
+}
 
-@keyframes pop-in { from { opacity: 0; transform: translateY(12px) scale(0.97); } to { opacity: 1; transform: none; } }
-@keyframes float-up { 0% { opacity: 1; transform: translateY(0); } 100% { opacity: 0; transform: translateY(-40px); } }
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes float-up {
+  0% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-40px);
+  }
+}
 @layer utilities {
-  .animate-pop { animation: pop-in 0.4s cubic-bezier(.2,.9,.3,1.2) both; }
-  .animate-float-up { animation: float-up 0.9s ease-out forwards; }
+  .animate-pop {
+    animation: pop-in 0.4s cubic-bezier(0.2, 0.9, 0.3, 1.2) both;
+  }
+  .animate-float-up {
+    animation: float-up 0.9s ease-out forwards;
+  }
 }

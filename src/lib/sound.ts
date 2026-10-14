@@ -1,4 +1,5 @@
 import { useEffect, useSyncExternalStore } from "react";
+import { getCustomStoredTracks } from "./audioLibrary";
 
 const KEY = "quizboss-muted";
 let muted: boolean | null = null;
@@ -278,20 +279,80 @@ function notifyAudioSubs() {
 
 let adminTrackCache: MusicTrackItem | null = null;
 let adminTracksList: MusicTrackItem[] = BUILTIN_SYNTH_TRACKS;
+let customTracksList: MusicTrackItem[] = [];
+
+export async function reloadCustomTracks(): Promise<void> {
+  try {
+    const list = await getCustomStoredTracks();
+    customTracksList = list.map((t) => {
+      let playUrl = t.url;
+      if (!playUrl && t.blob) {
+        try {
+          playUrl = URL.createObjectURL(t.blob);
+        } catch {
+          // ignore
+        }
+      }
+      return {
+        id: t.id,
+        title: t.title,
+        credit: t.artist || "Musique personnalisée",
+        type: "audio" as const,
+        url: playUrl,
+      };
+    });
+    notifyAudioSubs();
+  } catch {
+    // ignore
+  }
+}
+
+if (typeof window !== "undefined") {
+  reloadCustomTracks().catch(() => {});
+}
 
 export function getAvailableTracks(): MusicTrackItem[] {
-  if (!adminSongUrl) return BUILTIN_SYNTH_TRACKS;
-  if (!adminTrackCache || adminTrackCache.url !== adminSongUrl || adminTrackCache.credit !== (adminSongCredit || "Musique officielle QuizBoss")) {
-    adminTrackCache = {
-      id: "admin-custom-song",
-      title: adminSongCredit || "Chanson officielle du site 🎵",
-      credit: adminSongCredit || "Musique officielle QuizBoss",
-      type: "audio",
-      url: adminSongUrl,
-    };
-    adminTracksList = [adminTrackCache, ...BUILTIN_SYNTH_TRACKS];
+  let base: MusicTrackItem[] = BUILTIN_SYNTH_TRACKS;
+  if (adminSongUrl) {
+    if (
+      !adminTrackCache ||
+      adminTrackCache.url !== adminSongUrl ||
+      adminTrackCache.credit !== (adminSongCredit || "Musique officielle QuizBoss")
+    ) {
+      adminTrackCache = {
+        id: "admin-custom-song",
+        title: adminSongCredit || "Chanson officielle du site 🎵",
+        credit: adminSongCredit || "Musique officielle QuizBoss",
+        type: "audio",
+        url: adminSongUrl,
+      };
+      adminTracksList = [adminTrackCache, ...BUILTIN_SYNTH_TRACKS];
+    }
+    base = adminTracksList;
   }
-  return adminTracksList;
+  if (customTracksList.length > 0) {
+    return [...customTracksList, ...base];
+  }
+  return base;
+}
+
+export function selectTrackById(id: string) {
+  const tracks = getAvailableTracks();
+  const idx = tracks.findIndex((t) => t.id === id);
+  if (idx !== -1) {
+    currentTrackIndex = idx;
+    if (typeof localStorage !== "undefined") {
+      localStorage.setItem(SITE_MUSIC_TRACK_IDX_KEY, String(currentTrackIndex));
+      localStorage.setItem(SITE_MUSIC_DISABLED_KEY, "0");
+    }
+    siteMusicDisabled = false;
+    siteMusicPausedByUser = false;
+    if (isMuted()) {
+      toggleMute();
+    }
+    syncSiteAudioPlayback();
+    notifyAudioSubs();
+  }
 }
 
 export function getCurrentTrack(): MusicTrackItem {

@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useLocation } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import {
   Share2,
@@ -20,6 +20,8 @@ import {
   BellRing,
   AlertCircle,
   Film,
+  X,
+  Zap,
 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
@@ -38,6 +40,7 @@ import {
 } from "@/lib/player";
 import {
   calculateDuelPot,
+  cancelDuelRoom,
   fetchAllRegisteredPlayers,
   isRoomOpen,
   listDuelRooms,
@@ -83,6 +86,7 @@ type Setup = {
   playerIds?: string[];
   myPlayerIndex: number;
   mode: Mode;
+  gameplayMode?: "reflex" | "turn_based";
   stake: number;
   category: string;
   roomCode?: string;
@@ -170,8 +174,10 @@ function DuelPage() {
 
 function SetupScreen({ onStart }: { onStart: (s: Setup) => void }) {
   const p = usePlayer();
+  const location = useLocation();
   const [n, setN] = useState(2); // Minimum 2, Maximum 4
   const [mode, setMode] = useState<Mode>("online");
+  const [gameplayMode, setGameplayMode] = useState<"reflex" | "turn_based">("reflex");
   const [stake, setStake] = useState(25);
   const [customStake, setCustomStake] = useState("");
   const [category, setCategory] = useState("mix");
@@ -201,6 +207,24 @@ function SetupScreen({ onStart }: { onStart: (s: Setup) => void }) {
     setAdModalOpen(true);
   }
 
+  // Détection et acceptation automatique dès qu'un lien ou bouton '⚡ Accepter' est cliqué (même si déjà sur /duel)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search || location.search);
+    const rCode = params.get("room")?.toUpperCase();
+    const shouldAutoAccept = params.get("accept") === "1";
+    if (rCode) {
+      setJoinCodeInput(rCode);
+      if (shouldAutoAccept && autoAcceptedRef.current !== rCode) {
+        autoAcceptedRef.current = rCode;
+        const timer = setTimeout(() => {
+          handleJoinRoom(rCode);
+        }, 150);
+        return () => clearTimeout(timer);
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.search]);
+
   useEffect(() => {
     const refreshLobby = async () => {
       const [rList, pList] = await Promise.all([listDuelRooms(), fetchAllRegisteredPlayers()]);
@@ -208,7 +232,7 @@ function SetupScreen({ onStart }: { onStart: (s: Setup) => void }) {
       setRegisteredPlayers(pList);
     };
     refreshLobby();
-    const interval = setInterval(refreshLobby, 3000);
+    const interval = setInterval(refreshLobby, 2500);
 
     if (p.name?.trim() || p.avatarUrl) {
       registerPlayerInDirectory({
@@ -217,19 +241,6 @@ function SetupScreen({ onStart }: { onStart: (s: Setup) => void }) {
         level: levelFromXp(p.xp),
         avatarUrl: p.avatarUrl,
       });
-    }
-
-    const params = new URLSearchParams(window.location.search);
-    const rCode = params.get("room")?.toUpperCase();
-    const shouldAutoAccept = params.get("accept") === "1";
-    if (rCode) {
-      setJoinCodeInput(rCode);
-      if (shouldAutoAccept && autoAcceptedRef.current !== rCode) {
-        autoAcceptedRef.current = rCode;
-        setTimeout(() => {
-          handleJoinRoom(rCode);
-        }, 250);
-      }
     }
 
     const ch = supabase
@@ -246,7 +257,8 @@ function SetupScreen({ onStart }: { onStart: (s: Setup) => void }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [p.id, p.name, p.xp]);
 
-  // Synchronisation en temps réel de la chambre active : dès que le défi est accepté ou la chambre pleine, BOOM le jeu commence !
+  // Synchronisation infaillible en temps réel de la chambre active :
+  // Dès qu'un joueur clique sur '⚡ Accepter', l'hôte bascule instantanément sur l'écran du quiz !
   useEffect(() => {
     if (!activeRoom) return;
     let launched = false;
@@ -271,6 +283,7 @@ function SetupScreen({ onStart }: { onStart: (s: Setup) => void }) {
         playerIds: startedRoom.players.map((pl) => pl.id),
         myPlayerIndex: myIdx,
         mode: "online",
+        gameplayMode: startedRoom.gameplayMode || "reflex",
         stake: startedRoom.stake,
         category: startedRoom.category,
         roomCode: startedRoom.code,
@@ -284,8 +297,8 @@ function SetupScreen({ onStart }: { onStart: (s: Setup) => void }) {
         if (payload?.room) {
           const r = payload.room as DuelRoom;
           setActiveRoom(r);
-          if (r.status === "playing" && r.players.length >= 2) {
-            launchFromRoom(r, r.questions as QuizQuestion[] | undefined);
+          if ((r.status === "playing" || r.players.length >= 2) && r.players.length >= 2) {
+            launchFromRoom(r, (r.questions || payload.questions) as QuizQuestion[] | undefined);
           }
         }
       })
@@ -294,23 +307,90 @@ function SetupScreen({ onStart }: { onStart: (s: Setup) => void }) {
         const startedRoom = payload.room as DuelRoom;
         launchFromRoom(startedRoom, payload.questions as QuizQuestion[] | undefined);
       })
+      .on("broadcast", { event: "room-cancelled" }, () => {
+        setActiveRoom(null);
+        toast.error("La chambre a été annulée par l'hôte.");
+      })
       .subscribe();
 
+    const lobbyCh = supabase
+      .channel(`quizboss-duel-lobby-active-${activeRoom.code}`)
+      .on("broadcast", { event: "room-updated" }, ({ payload }) => {
+        if (payload?.room && payload.room.code === activeRoom.code) {
+          const r = payload.room as DuelRoom;
+          if (r.status === "cancelled") {
+            setActiveRoom(null);
+            toast.error("La chambre a été annulée.");
+            return;
+          }
+          setActiveRoom(r);
+          if ((r.status === "playing" || r.players.length >= 2) && r.players.length >= 2) {
+            launchFromRoom(r, (r.questions || payload.questions) as QuizQuestion[] | undefined);
+          }
+        }
+      })
+      .subscribe();
+
+    // Écouteur d'événement local pour synchronisation instantanée entre onglets ou même instance
+    const handleLocalSync = (e: Event) => {
+      const customEvent = e as CustomEvent<{ room?: DuelRoom; questions?: QuizQuestion[] }>;
+      const r = customEvent.detail?.room;
+      if (r && r.code === activeRoom.code) {
+        setActiveRoom(r);
+        if ((r.status === "playing" || r.players.length >= 2) && r.players.length >= 2) {
+          launchFromRoom(r, customEvent.detail?.questions);
+        }
+      }
+    };
+    window.addEventListener("quizboss-room-sync", handleLocalSync);
+
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === "quizboss-duel-rooms-v4" && e.newValue) {
+        try {
+          const list = JSON.parse(e.newValue) as DuelRoom[];
+          const found = list.find((r) => r.code === activeRoom.code);
+          if (
+            found &&
+            (found.status === "playing" || found.players.length >= 2) &&
+            found.players.length >= 2
+          ) {
+            launchFromRoom(found, found.questions as QuizQuestion[] | undefined);
+          }
+        } catch {
+          // ignore
+        }
+      }
+    };
+    window.addEventListener("storage", onStorage);
+
+    // Polling ultra-réactif (350ms) pour garantir la bascule sur tous les navigateurs et réseaux mobiles
     const pollTimer = setInterval(async () => {
       const list = await listDuelRooms();
       const found = list.find((r) => r.code === activeRoom.code);
       if (found) {
+        if (found.status === "cancelled") {
+          clearInterval(pollTimer);
+          setActiveRoom(null);
+          toast.error("La chambre a été annulée.");
+          return;
+        }
         setActiveRoom(found);
-        if (found.status === "playing" && found.players.length >= 2) {
+        if (
+          (found.status === "playing" || found.players.length >= 2) &&
+          found.players.length >= 2
+        ) {
           clearInterval(pollTimer);
           launchFromRoom(found, found.questions as QuizQuestion[] | undefined);
         }
       }
-    }, 900);
+    }, 350);
 
     return () => {
       clearInterval(pollTimer);
+      window.removeEventListener("quizboss-room-sync", handleLocalSync);
+      window.removeEventListener("storage", onStorage);
       supabase.removeChannel(roomChannel);
+      supabase.removeChannel(lobbyCh);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeRoom?.code, p.id, myDisplayName]);
@@ -360,6 +440,7 @@ function SetupScreen({ onStart }: { onStart: (s: Setup) => void }) {
       targetPseudo: targetPseudo || undefined,
       invitedPseudos: invited,
       status: "waiting",
+      gameplayMode: mode === "online" ? gameplayMode : undefined,
       players: [
         {
           id: p.id,
@@ -478,7 +559,7 @@ function SetupScreen({ onStart }: { onStart: (s: Setup) => void }) {
       });
     }
 
-    const isNowFull = updatedPlayers.length >= room.maxPlayers;
+    const isNowFull = updatedPlayers.length >= room.maxPlayers || updatedPlayers.length >= 2;
     const qs =
       room.questions && room.questions.length >= 3
         ? (room.questions as QuizQuestion[])
@@ -492,9 +573,8 @@ function SetupScreen({ onStart }: { onStart: (s: Setup) => void }) {
       questions: qs,
     };
 
-    // Sauvegarde en arrière-plan : le joueur qui accepte démarre tout de suite
-    const savePromise = saveDuelRoom(updatedRoom);
-    if (!isNowFull) await savePromise;
+    // Sauvegarde immédiate
+    await saveDuelRoom(updatedRoom);
 
     try {
       const roomChannel = supabase.channel(`quizboss-room-${updatedRoom.code}`);
@@ -507,7 +587,7 @@ function SetupScreen({ onStart }: { onStart: (s: Setup) => void }) {
               payload: { room: updatedRoom, questions: qs },
             })
             .finally(() => {
-              setTimeout(() => supabase.removeChannel(roomChannel), 700);
+              setTimeout(() => supabase.removeChannel(roomChannel), 800);
             });
         }
       });
@@ -515,7 +595,56 @@ function SetupScreen({ onStart }: { onStart: (s: Setup) => void }) {
       // ignore
     }
 
-    // BOOM : Si le joueur accepte un défi 1v1 (ou complète la chambre 2..4 joueurs), le jeu commence immédiatement !
+    try {
+      const lobbyChannel = supabase.channel("quizboss-duel-lobby");
+      lobbyChannel.subscribe((status) => {
+        if (status === "SUBSCRIBED") {
+          lobbyChannel
+            .send({
+              type: "broadcast",
+              event: "room-updated",
+              payload: { room: updatedRoom, questions: qs },
+            })
+            .finally(() => {
+              setTimeout(() => supabase.removeChannel(lobbyChannel), 800);
+            });
+        }
+      });
+    } catch {
+      // ignore
+    }
+
+    // Alerter immédiatement le salon local et les fenêtres actives
+    try {
+      window.dispatchEvent(
+        new CustomEvent("quizboss-room-sync", {
+          detail: { room: updatedRoom, questions: qs },
+        }),
+      );
+    } catch {
+      // ignore
+    }
+
+    try {
+      const activeCh = supabase.channel(`quizboss-duel-lobby-active-${updatedRoom.code}`);
+      activeCh.subscribe((status) => {
+        if (status === "SUBSCRIBED") {
+          activeCh
+            .send({
+              type: "broadcast",
+              event: "room-updated",
+              payload: { room: updatedRoom, questions: qs },
+            })
+            .finally(() => {
+              setTimeout(() => supabase.removeChannel(activeCh), 800);
+            });
+        }
+      });
+    } catch {
+      // ignore
+    }
+
+    // BOOM : Dès qu'un joueur accepte, la partie commence immédiatement !
     if (isNowFull && updatedPlayers.length >= 2) {
       const myIdx = Math.max(
         0,
@@ -529,6 +658,7 @@ function SetupScreen({ onStart }: { onStart: (s: Setup) => void }) {
         playerIds: updatedPlayers.map((pl) => pl.id),
         myPlayerIndex: myIdx,
         mode: "online",
+        gameplayMode: updatedRoom.gameplayMode || "reflex",
         stake: updatedRoom.stake,
         category: updatedRoom.category,
         roomCode: updatedRoom.code,
@@ -586,6 +716,25 @@ function SetupScreen({ onStart }: { onStart: (s: Setup) => void }) {
       // ignore
     }
 
+    try {
+      const lobbyCh = supabase.channel("quizboss-duel-lobby");
+      lobbyCh.subscribe((status) => {
+        if (status === "SUBSCRIBED") {
+          lobbyCh
+            .send({
+              type: "broadcast",
+              event: "room-updated",
+              payload: { room: updated, questions: qs },
+            })
+            .finally(() => {
+              setTimeout(() => supabase.removeChannel(lobbyCh), 800);
+            });
+        }
+      });
+    } catch {
+      // ignore
+    }
+
     const myIdx = Math.max(
       0,
       updated.players.findIndex((pl) => pl.id === p.id || pl.name === myDisplayName),
@@ -598,6 +747,7 @@ function SetupScreen({ onStart }: { onStart: (s: Setup) => void }) {
       playerIds: updated.players.map((pl) => pl.id),
       myPlayerIndex: myIdx,
       mode: "online",
+      gameplayMode: updated.gameplayMode || "reflex",
       stake: updated.stake,
       category: updated.category,
       roomCode: updated.code,
@@ -781,6 +931,14 @@ function SetupScreen({ onStart }: { onStart: (s: Setup) => void }) {
 
           <div className="rounded-2xl bg-muted/60 p-3 text-xs space-y-1">
             <div className="flex justify-between">
+              <span>Règle du duel :</span>
+              <b className="text-primary">
+                {activeRoom.gameplayMode === "turn_based"
+                  ? "⏱️ Tour par tour (15s par question)"
+                  : "⚡ Réflexe (Buzzer le plus rapide)"}
+              </b>
+            </div>
+            <div className="flex justify-between">
               <span>Mise obligatoire par joueur :</span>
               <b>
                 {activeRoom.stake === 0 ? "🎁 Partie Gratuite (0 GDS)" : `${activeRoom.stake} GDS`}
@@ -858,13 +1016,42 @@ function SetupScreen({ onStart }: { onStart: (s: Setup) => void }) {
                   : `Démarrer (${activeRoom.players.length} joueurs)`}
             </Button>
           </div>
-          <button
-            type="button"
-            onClick={() => setActiveRoom(null)}
-            className="w-full text-center text-xs text-muted-foreground hover:text-foreground"
-          >
-            Quitter / Fermer la chambre
-          </button>
+
+          {/* Bouton rouge visible pour l'hôte : Annuler ma chambre */}
+          {activeRoom.hostId === p.id && (
+            <button
+              type="button"
+              onClick={async () => {
+                sfx.click();
+                const codeToCancel = activeRoom.code;
+                const stakeRestituted = activeRoom.stake;
+                await cancelDuelRoom(codeToCancel, p.id);
+                setActiveRoom(null);
+                setRooms((prev) => prev.filter((r) => r.code !== codeToCancel));
+                toast.success(
+                  stakeRestituted > 0
+                    ? `✕ Chambre ${codeToCancel} annulée ! Ta mise de ${stakeRestituted} GDS est immédiatement restituée.`
+                    : `✕ Chambre ${codeToCancel} annulée et retirée du lobby.`,
+                );
+              }}
+              className="flex w-full items-center justify-center gap-2 rounded-2xl border-2 border-destructive/60 bg-destructive/10 py-3 text-xs font-extrabold text-destructive hover:bg-destructive/20 active:scale-95 transition-all shadow-sm cursor-pointer"
+            >
+              <X className="h-4 w-4" /> ✕ Annuler ma chambre & restituer la mise
+            </button>
+          )}
+
+          {activeRoom.hostId !== p.id && (
+            <button
+              type="button"
+              onClick={() => {
+                sfx.click();
+                setActiveRoom(null);
+              }}
+              className="w-full text-center text-xs text-muted-foreground hover:text-foreground cursor-pointer py-1"
+            >
+              Quitter / Fermer la chambre
+            </button>
+          )}
         </div>
       )}
 
@@ -1011,9 +1198,7 @@ function SetupScreen({ onStart }: { onStart: (s: Setup) => void }) {
         {stake === 0 && (
           <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-primary/40 bg-primary/10 p-3 text-xs">
             <div className="space-y-0.5">
-              <p className="font-extrabold text-primary">
-                🎁 Parties Duel Gratuites Sponsorisées
-              </p>
+              <p className="font-extrabold text-primary">🎁 Parties Duel Gratuites Sponsorisées</p>
               <p className="text-[11px] text-muted-foreground">
                 {left > 0
                   ? `Tu as ${left} partie(s) gratuite(s) déjà débloquée(s) ! Tu peux lancer ton duel ou en débloquer davantage.`
@@ -1167,6 +1352,55 @@ function SetupScreen({ onStart }: { onStart: (s: Setup) => void }) {
             <p className="text-[10px] text-muted-foreground">Chacun son tour</p>
           </button>
         </div>
+
+        {/* Règles pour le mode En Ligne : Réflexe vs Tour par tour (15s) */}
+        {mode === "online" && (
+          <div className="mt-3 rounded-2xl border border-primary/30 bg-primary/5 p-3.5 space-y-2">
+            <span className="text-xs font-extrabold text-foreground flex items-center gap-1.5">
+              <Zap className="h-4 w-4 text-primary" /> Règle du duel en ligne :
+            </span>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  sfx.click();
+                  setGameplayMode("reflex");
+                }}
+                className={`rounded-xl border p-2.5 text-left transition-all cursor-pointer ${
+                  gameplayMode === "reflex"
+                    ? "border-primary bg-primary text-primary-foreground shadow-sm"
+                    : "border-border bg-card text-foreground hover:bg-muted/70"
+                }`}
+              >
+                <b className="block text-xs">⚡ Mode Réflexe</b>
+                <p
+                  className={`text-[10px] mt-0.5 ${gameplayMode === "reflex" ? "opacity-90" : "text-muted-foreground"}`}
+                >
+                  Le plus rapide à buzzer marque le point !
+                </p>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  sfx.click();
+                  setGameplayMode("turn_based");
+                }}
+                className={`rounded-xl border p-2.5 text-left transition-all cursor-pointer ${
+                  gameplayMode === "turn_based"
+                    ? "border-primary bg-primary text-primary-foreground shadow-sm"
+                    : "border-border bg-card text-foreground hover:bg-muted/70"
+                }`}
+              >
+                <b className="block text-xs">⏱️ Tour par tour (15s)</b>
+                <p
+                  className={`text-[10px] mt-0.5 ${gameplayMode === "turn_based" ? "opacity-90" : "text-muted-foreground"}`}
+                >
+                  15s pour répondre à tour de rôle !
+                </p>
+              </button>
+            </div>
+          </div>
+        )}
       </section>
 
       {/* 4. Catégorie */}
@@ -1421,11 +1655,12 @@ function Game({
   questions: QuizQuestion[];
   onExit: () => void;
 }) {
-  const { names, avatars, myPlayerIndex, mode, stake, roomCode } = setup;
+  const { names, avatars, myPlayerIndex, mode, gameplayMode, stake, roomCode } = setup;
   const { data: settings } = useSettings();
   const pot = calculateDuelPot(stake, names.length);
-  const QUESTION_TIME = 12;
-  const CHOOSE_TIME = 7;
+  const isTurnBased = gameplayMode === "turn_based" || mode === "tour";
+  const QUESTION_TIME = isTurnBased ? 15 : 12;
+  const CHOOSE_TIME = isTurnBased ? 15 : 7;
 
   const [idx, setIdx] = useState(0);
   const [scores, setScores] = useState<number[]>(names.map(() => 0));
@@ -1438,12 +1673,11 @@ function Game({
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const q = questions[idx] as QuizQuestion;
 
-  const activeResponder = mode === "tour" ? idx % names.length : buzzed;
+  const activeTurn = isTurnBased ? idx % names.length : null;
+  const isMyTurn = !isTurnBased || mode !== "online" || activeTurn === myPlayerIndex;
+  const activeResponder = isTurnBased ? activeTurn : buzzed;
   const canClickOptions =
-    picked === null &&
-    (mode === "tour" ||
-      (mode === "buzzer" && buzzed !== null) ||
-      mode === "online");
+    picked === null && (isTurnBased ? isMyTurn : mode === "buzzer" ? buzzed !== null : true);
 
   useQuizBgm(!done, true);
 
@@ -1478,7 +1712,9 @@ function Game({
     if (done || picked !== null || !q) return;
     if (time <= 0) {
       sfx.timeout();
-      if (buzzed !== null) {
+      if (isTurnBased) {
+        applyAnswerResolution(activeTurn ?? 0, -2);
+      } else if (buzzed !== null) {
         applyAnswerResolution(buzzed, -2);
       } else {
         applyNoAnswerNullRound();
@@ -1558,8 +1794,12 @@ function Game({
   }
 
   function handlePickOption(optionIdx: number) {
-    if (picked !== null) return;
-    const who = mode === "online" ? myPlayerIndex : (activeResponder ?? myPlayerIndex);
+    if (!canClickOptions || picked !== null) return;
+    const who = isTurnBased
+      ? (activeTurn ?? myPlayerIndex)
+      : mode === "online"
+        ? myPlayerIndex
+        : (activeResponder ?? myPlayerIndex);
     if (mode === "online" && channelRef.current) {
       channelRef.current.send({
         type: "broadcast",
@@ -1774,7 +2014,15 @@ function Game({
       {/* Question Card */}
       <div key={q.id} className="rounded-3xl bg-card p-5 animate-pop">
         <div className="flex items-center justify-between">
-          {activeResponder !== null && activeResponder !== undefined ? (
+          {isTurnBased ? (
+            <p className="text-xs font-extrabold uppercase tracking-widest text-primary">
+              {mode === "online"
+                ? isMyTurn
+                  ? `🎯 C'est ton tour (${time}s) — Choisis la bonne réponse !`
+                  : `⏳ Tour de ${names[activeTurn ?? 0]} (${time}s) — Patiente…`
+                : `🎯 Tour de ${names[activeTurn ?? 0]} (${time}s)`}
+            </p>
+          ) : activeResponder !== null && activeResponder !== undefined ? (
             <p className="text-xs font-extrabold uppercase tracking-widest text-primary">
               ⚡ {names[activeResponder]} a la main — Choisis la réponse !
             </p>
@@ -1790,11 +2038,11 @@ function Game({
         <h2 className="mt-2 text-lg font-bold leading-snug">{q.question}</h2>
         <p className="mt-2 flex items-center gap-1 text-[11px] text-muted-foreground">
           <AlertCircle className="h-3.5 w-3.5 text-accent" />
-          Si un joueur clique et répond juste, les autres perdent la manche. S'il se trompe ou si
-          personne ne répond : 0 pt et on passe à la question suivante !
+          {isTurnBased
+            ? "Chaque joueur a 15 secondes pour répondre à son tour et marquer +100 pts !"
+            : "Le premier joueur qui clique et répond juste marque +100 pts et remporte la manche !"}
         </p>
       </div>
-
 
       {mode === "buzzer" && buzzed === null && picked === null && (
         <div

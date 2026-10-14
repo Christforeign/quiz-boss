@@ -34,8 +34,13 @@ export function Leaderboard() {
       ) : (
         <ol className="space-y-1.5">
           {rows.map((r, i) => (
-            <li key={r.id} className="flex items-center gap-3 rounded-xl bg-muted/50 px-3 py-2 text-sm">
-              <span className="w-6 font-extrabold text-accent">{i < 3 ? ["🥇", "🥈", "🥉"][i] : i + 1}</span>
+            <li
+              key={r.id}
+              className="flex items-center gap-3 rounded-xl bg-muted/50 px-3 py-2 text-sm"
+            >
+              <span className="w-6 font-extrabold text-accent">
+                {i < 3 ? ["🥇", "🥈", "🥉"][i] : i + 1}
+              </span>
               <span className="flex-1 truncate font-semibold">{r.name}</span>
               <span className="flex items-center gap-1 font-extrabold text-primary">
                 {tab === "duel" && <Swords className="h-3.5 w-3.5" />}
