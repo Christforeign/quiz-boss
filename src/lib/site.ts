@@ -1019,6 +1019,16 @@ function writeLocalRooms(rooms: DuelRoom[]) {
   }
 }
 
+/** Défi direct/privé : 60 s ; duel public : 3 min. Au-delà, ou en cours/terminé, il quitte le lobby. */
+export function roomTtlMs(r: DuelRoom): number {
+  const direct = !!r.targetPseudo || (r.invitedPseudos?.length ?? 0) > 0 || r.visibility === "private";
+  return direct ? 60_000 : 180_000;
+}
+export function isRoomOpen(r: DuelRoom, now = Date.now()): boolean {
+  if (r.status !== "waiting" || r.players.length >= r.maxPlayers) return false;
+  return now - new Date(r.createdAt).getTime() < roomTtlMs(r);
+}
+
 export async function listDuelRooms(): Promise<DuelRoom[]> {
   const map = new Map<string, DuelRoom>();
   const now = Date.now();
