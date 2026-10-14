@@ -276,18 +276,22 @@ function notifyAudioSubs() {
   subs.forEach((s) => s());
 }
 
+let adminTrackCache: MusicTrackItem | null = null;
+let adminTracksList: MusicTrackItem[] = BUILTIN_SYNTH_TRACKS;
+
 export function getAvailableTracks(): MusicTrackItem[] {
-  const list: MusicTrackItem[] = [];
-  if (adminSongUrl) {
-    list.push({
+  if (!adminSongUrl) return BUILTIN_SYNTH_TRACKS;
+  if (!adminTrackCache || adminTrackCache.url !== adminSongUrl || adminTrackCache.credit !== (adminSongCredit || "Musique officielle QuizBoss")) {
+    adminTrackCache = {
       id: "admin-custom-song",
       title: adminSongCredit || "Chanson officielle du site 🎵",
       credit: adminSongCredit || "Musique officielle QuizBoss",
       type: "audio",
       url: adminSongUrl,
-    });
+    };
+    adminTracksList = [adminTrackCache, ...BUILTIN_SYNTH_TRACKS];
   }
-  return [...list, ...BUILTIN_SYNTH_TRACKS];
+  return adminTracksList;
 }
 
 export function getCurrentTrack(): MusicTrackItem {
@@ -481,8 +485,10 @@ function syncSiteAudioPlayback() {
       siteAudio.pause();
     }
     startSynthLoop(track);
-    siteMusicPlaying = true;
-    notifyAudioSubs();
+    if (siteMusicPlaying) {
+      siteMusicPlaying = false;
+      notifyAudioSubs();
+    }
   }
 }
 
