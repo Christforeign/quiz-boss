@@ -14,13 +14,17 @@ import { Route as AdminRouteImport } from './routes/admin'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as ConditionsRouteImport } from './routes/conditions'
 import { Route as DuelRouteImport } from './routes/duel'
+import { Route as DuelsRouteImport } from './routes/duels'
 import { Route as ExplorerRouteImport } from './routes/explorer'
 import { Route as FaqRouteImport } from './routes/faq'
 import { Route as InviteRouteImport } from './routes/invite'
 import { Route as PortefeuilleRouteImport } from './routes/portefeuille'
+import { Route as ProfileRouteImport } from './routes/profile'
+import { Route as QuizRouteImport } from './routes/quiz'
 import { Route as RetraitRouteImport } from './routes/retrait'
 import { Route as StatutsRouteImport } from './routes/statuts'
 import { Route as PSlugRouteImport } from './routes/p.$slug'
+import { Route as PlayIndexRouteImport } from './routes/play.index'
 import { Route as PlayCategoryRouteImport } from './routes/play.$category'
 
 const IndexRoute = IndexRouteImport.update({
@@ -48,6 +52,11 @@ const DuelRoute = DuelRouteImport.update({
   path: '/duel',
   getParentRoute: () => rootRouteImport,
 } as any)
+const DuelsRoute = DuelsRouteImport.update({
+  id: '/duels',
+  path: '/duels',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ExplorerRoute = ExplorerRouteImport.update({
   id: '/explorer',
   path: '/explorer',
@@ -68,6 +77,16 @@ const PortefeuilleRoute = PortefeuilleRouteImport.update({
   path: '/portefeuille',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ProfileRoute = ProfileRouteImport.update({
+  id: '/profile',
+  path: '/profile',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const QuizRoute = QuizRouteImport.update({
+  id: '/quiz',
+  path: '/quiz',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const RetraitRoute = RetraitRouteImport.update({
   id: '/retrait',
   path: '/retrait',
@@ -83,6 +102,11 @@ const PSlugRoute = PSlugRouteImport.update({
   path: '/p/$slug',
   getParentRoute: () => rootRouteImport,
 } as any)
+const PlayIndexRoute = PlayIndexRouteImport.update({
+  id: '/play/',
+  path: '/play/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const PlayCategoryRoute = PlayCategoryRouteImport.update({
   id: '/play/$category',
   path: '/play/$category',
@@ -95,14 +119,18 @@ export interface FileRoutesByFullPath {
   '/auth': typeof AuthRoute
   '/conditions': typeof ConditionsRoute
   '/duel': typeof DuelRoute
+  '/duels': typeof DuelsRoute
   '/explorer': typeof ExplorerRoute
   '/faq': typeof FaqRoute
   '/invite': typeof InviteRoute
   '/portefeuille': typeof PortefeuilleRoute
+  '/profile': typeof ProfileRoute
+  '/quiz': typeof QuizRoute
   '/retrait': typeof RetraitRoute
   '/statuts': typeof StatutsRoute
   '/p/$slug': typeof PSlugRoute
   '/play/$category': typeof PlayCategoryRoute
+  '/play/': typeof PlayIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -110,14 +138,18 @@ export interface FileRoutesByTo {
   '/auth': typeof AuthRoute
   '/conditions': typeof ConditionsRoute
   '/duel': typeof DuelRoute
+  '/duels': typeof DuelsRoute
   '/explorer': typeof ExplorerRoute
   '/faq': typeof FaqRoute
   '/invite': typeof InviteRoute
   '/portefeuille': typeof PortefeuilleRoute
+  '/profile': typeof ProfileRoute
+  '/quiz': typeof QuizRoute
   '/retrait': typeof RetraitRoute
   '/statuts': typeof StatutsRoute
   '/p/$slug': typeof PSlugRoute
   '/play/$category': typeof PlayCategoryRoute
+  '/play': typeof PlayIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -126,14 +158,18 @@ export interface FileRoutesById {
   '/auth': typeof AuthRoute
   '/conditions': typeof ConditionsRoute
   '/duel': typeof DuelRoute
+  '/duels': typeof DuelsRoute
   '/explorer': typeof ExplorerRoute
   '/faq': typeof FaqRoute
   '/invite': typeof InviteRoute
   '/portefeuille': typeof PortefeuilleRoute
+  '/profile': typeof ProfileRoute
+  '/quiz': typeof QuizRoute
   '/retrait': typeof RetraitRoute
   '/statuts': typeof StatutsRoute
   '/p/$slug': typeof PSlugRoute
   '/play/$category': typeof PlayCategoryRoute
+  '/play/': typeof PlayIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -143,14 +179,18 @@ export interface FileRouteTypes {
     | '/auth'
     | '/conditions'
     | '/duel'
+    | '/duels'
     | '/explorer'
     | '/faq'
     | '/invite'
     | '/portefeuille'
+    | '/profile'
+    | '/quiz'
     | '/retrait'
     | '/statuts'
     | '/p/$slug'
     | '/play/$category'
+    | '/play/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -158,14 +198,18 @@ export interface FileRouteTypes {
     | '/auth'
     | '/conditions'
     | '/duel'
+    | '/duels'
     | '/explorer'
     | '/faq'
     | '/invite'
     | '/portefeuille'
+    | '/profile'
+    | '/quiz'
     | '/retrait'
     | '/statuts'
     | '/p/$slug'
     | '/play/$category'
+    | '/play'
   id:
     | '__root__'
     | '/'
@@ -173,14 +217,18 @@ export interface FileRouteTypes {
     | '/auth'
     | '/conditions'
     | '/duel'
+    | '/duels'
     | '/explorer'
     | '/faq'
     | '/invite'
     | '/portefeuille'
+    | '/profile'
+    | '/quiz'
     | '/retrait'
     | '/statuts'
     | '/p/$slug'
     | '/play/$category'
+    | '/play/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -189,14 +237,18 @@ export interface RootRouteChildren {
   AuthRoute: typeof AuthRoute
   ConditionsRoute: typeof ConditionsRoute
   DuelRoute: typeof DuelRoute
+  DuelsRoute: typeof DuelsRoute
   ExplorerRoute: typeof ExplorerRoute
   FaqRoute: typeof FaqRoute
   InviteRoute: typeof InviteRoute
   PortefeuilleRoute: typeof PortefeuilleRoute
+  ProfileRoute: typeof ProfileRoute
+  QuizRoute: typeof QuizRoute
   RetraitRoute: typeof RetraitRoute
   StatutsRoute: typeof StatutsRoute
   PSlugRoute: typeof PSlugRoute
   PlayCategoryRoute: typeof PlayCategoryRoute
+  PlayIndexRoute: typeof PlayIndexRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -236,6 +288,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DuelRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/duels': {
+      id: '/duels'
+      path: '/duels'
+      fullPath: '/duels'
+      preLoaderRoute: typeof DuelsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/explorer': {
       id: '/explorer'
       path: '/explorer'
@@ -264,6 +323,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PortefeuilleRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/profile': {
+      id: '/profile'
+      path: '/profile'
+      fullPath: '/profile'
+      preLoaderRoute: typeof ProfileRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/quiz': {
+      id: '/quiz'
+      path: '/quiz'
+      fullPath: '/quiz'
+      preLoaderRoute: typeof QuizRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/retrait': {
       id: '/retrait'
       path: '/retrait'
@@ -285,6 +358,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PSlugRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/play/': {
+      id: '/play/'
+      path: '/play'
+      fullPath: '/play/'
+      preLoaderRoute: typeof PlayIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/play/$category': {
       id: '/play/$category'
       path: '/play/$category'
@@ -301,14 +381,18 @@ const rootRouteChildren: RootRouteChildren = {
   AuthRoute: AuthRoute,
   ConditionsRoute: ConditionsRoute,
   DuelRoute: DuelRoute,
+  DuelsRoute: DuelsRoute,
   ExplorerRoute: ExplorerRoute,
   FaqRoute: FaqRoute,
   InviteRoute: InviteRoute,
   PortefeuilleRoute: PortefeuilleRoute,
+  ProfileRoute: ProfileRoute,
+  QuizRoute: QuizRoute,
   RetraitRoute: RetraitRoute,
   StatutsRoute: StatutsRoute,
   PSlugRoute: PSlugRoute,
   PlayCategoryRoute: PlayCategoryRoute,
+  PlayIndexRoute: PlayIndexRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
