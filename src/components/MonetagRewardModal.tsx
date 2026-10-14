@@ -142,11 +142,6 @@ export function MonetagRewardModal({
               >
                 <ExternalLink className="h-5 w-5" /> 🎬 Regarder la pub & débloquer
               </a>
-              {waitingReturn && (
-                <p className="text-xs text-muted-foreground">
-                  Déblocage automatique dans {secondsLeft}s…
-                </p>
-              )}
             </div>
           ) : (
             <div className="space-y-2 py-2 text-center animate-pop">
