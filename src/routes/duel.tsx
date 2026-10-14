@@ -1432,14 +1432,14 @@ function Game({
   const [done, setDone] = useState(false);
 
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
-  const q = questions[idx]!;
+  const q = questions[idx] as QuizQuestion;
 
   const activeResponder = mode === "tour" ? idx % names.length : buzzed;
   const canClickOptions =
     picked === null &&
     (mode === "tour" ||
       (mode === "buzzer" && buzzed !== null) ||
-      (mode === "online" && buzzed === myPlayerIndex));
+      mode === "online");
 
   useQuizBgm(!done, true);
 
@@ -1471,7 +1471,7 @@ function Game({
   }, [mode, roomCode, idx]);
 
   useEffect(() => {
-    if (done || picked !== null) return;
+    if (done || picked !== null || !q) return;
     if (time <= 0) {
       sfx.timeout();
       if (buzzed !== null) {
@@ -1487,11 +1487,18 @@ function Game({
   });
 
   function nextQuestion() {
-    if (idx + 1 >= questions.length) {
+    let finished = false;
+    setIdx((x) => {
+      if (x + 1 >= questions.length) {
+        finished = true;
+        return x;
+      }
+      return x + 1;
+    });
+    if (finished || idx + 1 >= questions.length) {
       setDone(true);
       return;
     }
-    setIdx((x) => x + 1);
     setBuzzed(null);
     setPicked(null);
     setRoundOutcome(null);
@@ -1522,12 +1529,13 @@ function Game({
   }
 
   function applyAnswerResolution(who: number, optionIdx: number) {
+    if (!q) return;
     setPicked((prev) => {
       if (prev !== null) return prev;
       const ok = optionIdx === q.correct_index;
       if (ok) {
         sfx.correct(2);
-        const pts = 100 + time * 5;
+        const pts = 100; // points fixes : même score sur tous les écrans
         setScores((s) => s.map((v, j) => (j === who ? v + pts : v)));
         setRoundOutcome(
           `✅ ${names[who]} trouve la bonne réponse (+${pts} pts) ! Les autres perdent la manche.`,
@@ -1547,7 +1555,7 @@ function Game({
 
   function handlePickOption(optionIdx: number) {
     if (picked !== null) return;
-    const who = activeResponder ?? myPlayerIndex;
+    const who = mode === "online" ? myPlayerIndex : (activeResponder ?? myPlayerIndex);
     if (mode === "online" && channelRef.current) {
       channelRef.current.send({
         type: "broadcast",
@@ -1683,6 +1691,7 @@ function Game({
     );
   }
 
+  if (!q) return null;
   const diff = difficultyBadge(q.difficulty ?? 2);
 
   return (
@@ -1763,7 +1772,7 @@ function Game({
             </p>
           ) : (
             <span className="text-[11px] font-extrabold uppercase tracking-widest text-accent">
-              🔔 Clique sur le bouton Buzzer si tu connais la réponse !
+              🔔 Le premier qui touche la bonne réponse gagne le point !
             </span>
           )}
           <span className={`rounded-full px-2 py-0.5 text-[10px] font-extrabold ${diff.cls}`}>
@@ -1778,23 +1787,6 @@ function Game({
         </p>
       </div>
 
-      {/* BOUTON BUZZER OBLIGATOIRE */}
-      {mode === "online" && buzzed === null && picked === null && (
-        <button
-          type="button"
-          onClick={() => handlePressBuzzer(myPlayerIndex)}
-          className="flex w-full items-center justify-center gap-2 rounded-2xl bg-grad-sunset py-4 text-base font-extrabold text-secondary-foreground shadow-glow transition-transform active:scale-95 animate-pop"
-        >
-          <BellRing className="h-5 w-5 animate-bounce" /> JE CONNAIS LA RÉPONSE ! (Cliquer pour
-          choisir)
-        </button>
-      )}
-
-      {mode === "online" && buzzed !== null && buzzed !== myPlayerIndex && picked === null && (
-        <div className="rounded-2xl border border-accent/40 bg-accent/15 p-3 text-center text-xs font-extrabold text-accent animate-pulse">
-          ⚡ {names[buzzed]} a cliqué en premier et est en train de choisir sa réponse ({time}s)…
-        </div>
-      )}
 
       {mode === "buzzer" && buzzed === null && picked === null && (
         <div
