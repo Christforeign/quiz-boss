@@ -39,6 +39,7 @@ import {
 import {
   calculateDuelPot,
   fetchAllRegisteredPlayers,
+  isRoomOpen,
   listDuelRooms,
   registerPlayerInDirectory,
   saveDuelRoom,
@@ -48,6 +49,7 @@ import {
   type RegisteredPlayer,
 } from "@/lib/site";
 import { sfx, useQuizBgm } from "@/lib/sound";
+import { submitScore } from "@/lib/leaderboard";
 import { MuteButton } from "@/components/MuteButton";
 import { AdSlot, LocalBanner } from "@/components/Ads";
 import { Button } from "@/components/ui/button";
@@ -1586,6 +1588,10 @@ function Game({
       }
     } else if (winners[0] === myPlayerIndex) {
       sfx.win();
+      if (mode === "online") {
+        const me = getPlayer();
+        void submitScore("duel", me.id, names[myPlayerIndex] || me.name || "Joueur", 1);
+      }
       if (stake > 0) {
         addCoins(
           pot.winnerPayout,

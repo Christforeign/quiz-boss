@@ -150,6 +150,8 @@ export function addCoins(
       ...(p.history ?? []),
     ].slice(0, 100),
   }));
+  const me = getPlayer();
+  void import("./leaderboard").then((m) => m.submitScore("solo", me.id, me.name || "Joueur", score));
 }
 
 /**

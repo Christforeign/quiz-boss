@@ -4,6 +4,7 @@ import { CATEGORIES } from "@/lib/categories";
 import { levelProgress, usePlayer } from "@/lib/player";
 import { AdSlot, LocalBanner } from "@/components/Ads";
 import { sfx } from "@/lib/sound";
+import { Leaderboard } from "@/components/Leaderboard";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -121,6 +122,8 @@ function Home() {
           ))}
         </div>
       </section>
+
+      <Leaderboard />
 
       <AdSlot slot="home-bottom" />
     </div>
