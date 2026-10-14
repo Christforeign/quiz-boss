@@ -336,7 +336,7 @@ function Game({
   const { data: settings } = useSettings();
   const session = useSession();
   const startLevel = useRef(levelFromXp(getPlayer().xp));
-  const q = questions[idx]!;
+  const q = questions[idx] as QuizQuestion;
 
   useQuizBgm(!done, modeConfig.id === "boss" || modeConfig.id === "legende" || streak >= 3);
 
@@ -347,7 +347,7 @@ function Game({
     );
 
   useEffect(() => {
-    if (picked !== null || done) return;
+    if (picked !== null || done || !q) return;
     if (time <= 0) {
       sfx.timeout();
       answer(-1);
@@ -382,7 +382,7 @@ function Game({
   }
 
   function answer(i: number) {
-    if (picked !== null) return;
+    if (picked !== null || !q) return;
     setPicked(i);
     const ok = i === q.correct_index;
 
@@ -445,7 +445,7 @@ function Game({
 
   function advance(nextStreak: number) {
     const l = timeForNext(nextStreak, idx + 1);
-    setIdx((x) => x + 1);
+    setIdx((x) => Math.min(x + 1, questions.length - 1));
     setPicked(null);
     setHiddenOptions([]);
     setLimit(l);
@@ -607,6 +607,7 @@ function Game({
     );
   }
 
+  if (!q) return null;
   const pct = (time / limit) * 100;
   const diff = difficultyBadge(q.difficulty ?? 1);
 

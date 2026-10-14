@@ -101,12 +101,7 @@ export const sfx = {
 
   /** Energetic match start fanfare */
   start() {
-    if (isMuted()) return;
-    tone(440, 0, 0.1, "triangle", 0.15);
-    tone(554.37, 0.1, 0.1, "triangle", 0.15);
-    tone(659.25, 0.2, 0.12, "triangle", 0.18);
-    tone(880, 0.32, 0.28, "sawtooth", 0.14, 920);
-    tone(440, 0.32, 0.28, "triangle", 0.14);
+    // son retiré (site allégé)
   },
 
   /** Correct answer chord that pitches up with combo streak */
@@ -121,11 +116,7 @@ export const sfx = {
 
   /** Special combo streak sound (3x, 5x, etc.) */
   combo() {
-    if (isMuted()) return;
-    [587.33, 739.99, 880, 1174.66, 1479.98].forEach((f, i) => {
-      tone(f, i * 0.055, 0.18, "triangle", 0.18);
-    });
-    noiseBurst(0.15, 0.12, 0.05);
+    // son retiré (site allégé)
   },
 
   /** Wrong answer / mistake buzzer + sub-bass drop */
@@ -138,57 +129,32 @@ export const sfx = {
 
   /** Timer tick + tense heartbeat when urgent */
   tick(urgent = false) {
-    if (isMuted()) return;
-    if (urgent) {
-      tone(1480, 0, 0.045, "square", 0.09, 980);
-      tone(95, 0, 0.09, "sine", 0.22, 55);
-      tone(85, 0.12, 0.08, "sine", 0.16, 50);
-    } else {
-      tone(1050, 0, 0.035, "triangle", 0.07, 800);
-    }
+    // son retiré (site allégé)
   },
 
   /** Time expired horn */
   timeout() {
-    if (isMuted()) return;
-    tone(311.13, 0, 0.22, "sawtooth", 0.16, 277.18);
-    tone(233.08, 0.2, 0.45, "sawtooth", 0.18, 155.56);
-    noiseBurst(0, 0.2, 0.06);
+    // son retiré (site allégé)
   },
 
   /** Coin / GDS reward chime */
   coin() {
-    if (isMuted()) return;
-    tone(987.77, 0, 0.08, "sine", 0.2);
-    tone(1318.51, 0.075, 0.32, "sine", 0.22);
-    tone(2637.02, 0.08, 0.18, "triangle", 0.08);
+    // son retiré (site allégé)
   },
 
   /** Joker / Power-up activation sweep */
   powerup() {
-    if (isMuted()) return;
-    tone(330, 0, 0.28, "sine", 0.18, 1320);
-    tone(440, 0.06, 0.28, "triangle", 0.15, 1760);
+    // son retiré (site allégé)
   },
 
   /** Duel buzzer */
   buzz() {
-    if (isMuted()) return;
-    tone(440, 0, 0.08, "square", 0.15, 660);
-    tone(880, 0.06, 0.18, "sawtooth", 0.14, 990);
-    noiseBurst(0, 0.06, 0.04);
+    // son retiré (site allégé)
   },
 
   /** Level-up epic fanfare */
   levelUp() {
-    if (isMuted()) return;
-    const notes = [523.25, 659.25, 783.99, 1046.5, 783.99, 1046.5];
-    const times = [0, 0.1, 0.2, 0.3, 0.45, 0.57];
-    const durs = [0.1, 0.1, 0.1, 0.14, 0.11, 0.45];
-    notes.forEach((f, i) => {
-      tone(f, times[i]!, durs[i]!, "triangle", 0.22);
-      tone(f * 0.5, times[i]!, durs[i]!, "sine", 0.14);
-    });
+    // son retiré (site allégé)
   },
 
   /** Victory melody */
@@ -198,7 +164,6 @@ export const sfx = {
       tone(f, i * 0.11, 0.32, "triangle", 0.22);
       tone(f * 0.5, i * 0.11, 0.32, "sine", 0.12);
     });
-    sfx.coin();
   },
 
   /** Defeat / Game over melody */
@@ -215,6 +180,7 @@ const BASS_LINE = [110, 110, 130.81, 146.83, 110, 110, 164.81, 146.83];
 
 export function startBgm(intense = false) {
   stopBgm();
+  if (intense || !intense) return; // musique synthétisée retirée
   if (isMuted()) return;
   bgmStep = 0;
   const intervalMs = intense ? 240 : 300;
@@ -383,6 +349,7 @@ function stopSynthLoop() {
 
 function startSynthLoop(track: MusicTrackItem) {
   stopSynthLoop();
+  return; // pistes synthétisées retirées : seule la chanson de l'admin joue
   if (isMuted() || siteMusicDisabled || siteMusicPausedByUser) return;
   const notes = track.melody ?? BUILTIN_SYNTH_TRACKS[0]!.melody!;
   const intervalMs = track.tempoMs ?? 300;

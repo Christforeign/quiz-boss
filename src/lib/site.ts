@@ -131,6 +131,10 @@ export async function broadcastAdminUpdate() {
 
 /** Upload a file (image or audio) to private storage and return a long-lived signed URL. */
 export async function uploadMedia(file: File, folder: string) {
+  const isAudio = file.type.startsWith("audio/") || /\.(mp3|m4a|wav|ogg|aac)$/i.test(file.name);
+  if (isAudio && file.size > 10 * 1024 * 1024) {
+    throw new Error("Chanson trop lourde (max 10 Mo). Compresse-la en MP3 ou colle un lien direct.");
+  }
   try {
     const ext = file.name.split(".").pop()?.toLowerCase() || "bin";
     const path = `${folder}/${crypto.randomUUID()}.${ext}`;
@@ -145,7 +149,9 @@ export async function uploadMedia(file: File, folder: string) {
     return data.signedUrl;
   } catch {
     if (file.type.startsWith("audio/") || /\.(mp3|m4a|wav|ogg|aac)$/i.test(file.name)) {
-      return await readFileAsDataUrl(file);
+      throw new Error(
+        "Import audio impossible. Utilise un fichier MP3 de moins de 10 Mo ou colle un lien direct vers la chanson.",
+      );
     }
     return await compressImageToDataUrl(file, 900, 0.78);
   }
