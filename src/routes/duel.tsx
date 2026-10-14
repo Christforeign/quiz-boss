@@ -304,7 +304,7 @@ function SetupScreen({ onStart }: { onStart: (s: Setup) => void }) {
           launchFromRoom(found, found.questions as QuizQuestion[] | undefined);
         }
       }
-    }, 1800);
+    }, 900);
 
     return () => {
       clearInterval(pollTimer);
@@ -490,7 +490,9 @@ function SetupScreen({ onStart }: { onStart: (s: Setup) => void }) {
       questions: qs,
     };
 
-    await saveDuelRoom(updatedRoom);
+    // Sauvegarde en arrière-plan : le joueur qui accepte démarre tout de suite
+    const savePromise = saveDuelRoom(updatedRoom);
+    if (!isNowFull) await savePromise;
 
     try {
       const roomChannel = supabase.channel(`quizboss-room-${updatedRoom.code}`);
@@ -623,7 +625,7 @@ function SetupScreen({ onStart }: { onStart: (s: Setup) => void }) {
       rp.pseudo.toLowerCase().includes(playerSearch.trim().toLowerCase()),
   );
 
-  const openWaitingRooms = rooms.filter((r) => r.status === "waiting");
+  const openWaitingRooms = rooms.filter((r) => isRoomOpen(r));
 
   return (
     <div className="space-y-5 py-2 animate-pop">

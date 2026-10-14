@@ -27,6 +27,7 @@ import {
   fetchDeposits,
   injectSmartSnippet,
   removeIntrusiveMonetag,
+  isRoomOpen,
   MONETAG_INPAGE_DEFAULT,
   MONETAG_DIRECT_LINK_DEFAULT,
   listDuelRooms,
@@ -310,10 +311,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       const rooms = await listDuelRooms();
       const waitingOthers = rooms.filter(
         (r) =>
-          r.status === "waiting" &&
+          isRoomOpen(r) &&
           r.hostId !== player.id &&
-          r.players.length < r.maxPlayers &&
-          (r.visibility === "public" ||
+          ((r.visibility === "public" && !r.targetPseudo && !(r.invitedPseudos?.length)) ||
             r.targetPseudo?.toLowerCase() === myPseudo.toLowerCase() ||
             r.invitedPseudos?.some((ip) => ip.toLowerCase() === myPseudo.toLowerCase())),
       );
@@ -428,6 +428,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         const isDirect =
           payload.targetId === player.id ||
           (payload.targetPseudo && payload.targetPseudo.toLowerCase() === myPseudo.toLowerCase());
+        // Défi destiné à quelqu'un d'autre : on ne montre rien
+        if (payload.targetPseudo && !isDirect) return;
         const pot = calculateDuelPot(payload.stake || 0, payload.maxPlayers || 2);
         sfx.buzz();
         triggerCrossPlatformNotification(
@@ -446,7 +448,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             : `🔥 ${payload.hostName} a lancé un défi Duel (${payload.stake} GDS) !`,
           {
             description: `Chambre ${payload.roomCode} · ${payload.maxPlayers} joueurs · Clique sur Accepter pour lancer le jeu !`,
-            duration: 14000,
+            duration: isDirect ? 60000 : 180000,
             action: {
               label: "⚡ Accepter",
               onClick: () => {
