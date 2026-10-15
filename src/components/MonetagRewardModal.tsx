@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { CheckCircle2, ExternalLink, Film, Gift, Loader2, Play, Sparkles, X } from "lucide-react";
 import { toast } from "sonner";
 import { unlockOneDuelByAd } from "@/lib/player";
@@ -87,9 +88,11 @@ export function MonetagRewardModal({
     setSessionCount((c) => c + 1);
   }
 
-  return (
+  if (typeof document === "undefined") return null;
+
+  return createPortal(
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-3 sm:p-4 backdrop-blur-sm animate-pop"
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 p-3 sm:p-4 backdrop-blur-sm animate-pop"
       onClick={(e) => {
         if (e.target === e.currentTarget) {
           sfx.click();
@@ -97,7 +100,7 @@ export function MonetagRewardModal({
         }
       }}
     >
-      <div className="relative w-full max-w-sm space-y-3.5 rounded-3xl border-2 border-primary bg-card p-4 sm:p-5 shadow-2xl">
+      <div className="relative w-full max-w-sm space-y-3.5 max-h-[85dvh] overflow-y-auto rounded-3xl border-2 border-primary bg-card p-4 sm:p-5 shadow-2xl">
         {/* En-tête ultra-compact */}
         <div className="flex items-start justify-between gap-2">
           <div className="flex items-center gap-2.5">
@@ -190,6 +193,7 @@ export function MonetagRewardModal({
           </div>
         )}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
