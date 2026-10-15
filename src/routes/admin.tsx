@@ -1646,22 +1646,27 @@ function UsersAdmin() {
     },
   });
 
-  const handleUpdateUserCoins = async (
+  const adjustCoins = async (
     user: { id: string; profileId?: string; pseudo: string },
-    newCoins: number,
+    delta: number,
+    set: number | null,
   ) => {
-    const clean = Math.max(0, Math.round(newCoins));
-    if (user.profileId) {
-      const { error } = await supabase
-        .from("profiles")
-        .update({ coins: clean, updated_at: new Date().toISOString() })
-        .eq("id", user.profileId);
-      if (error) return void toast.error(error.message);
-    }
-    toast.success(`Solde de ${user.pseudo} mis à jour : ${clean} GDS ✅`);
+    if (!user.profileId) return void toast.error("Ce joueur n'a pas de compte");
+    const { data, error } = await supabase.rpc("admin_adjust_coins", {
+      _user: user.profileId,
+      _delta: Math.round(delta),
+      ...(set !== null ? { _set: Math.max(0, Math.round(set)) } : {}),
+    });
+    if (error) return void toast.error(error.message);
+    toast.success(`Solde de ${user.pseudo} : ${data} GDS ✅`);
     await broadcastAdminUpdate();
     qc.invalidateQueries({ queryKey: ["admin", "users"] });
   };
+
+  const handleUpdateUserCoins = (
+    user: { id: string; profileId?: string; pseudo: string },
+    newCoins: number,
+  ) => adjustCoins(user, 0, newCoins);
 
   const filtered = users.filter(
     (u) =>
@@ -1733,22 +1738,32 @@ function UsersAdmin() {
               </div>
 
               {u.profileId && (
-                <div className="flex items-center gap-1.5">
+                <div className="flex flex-wrap items-center gap-1.5">
                   <Input
                     type="number"
-                    min={0}
                     value={customVal}
                     onChange={(e) => setEditingCoins({ ...editingCoins, [u.id]: e.target.value })}
                     className="h-8 w-24 text-xs font-bold"
                   />
                   <Button
                     size="sm"
+                    onClick={() => adjustCoins(u, parseInt(customVal || "0", 10), null)}
+                  >
+                    + Créditer
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => adjustCoins(u, -parseInt(customVal || "0", 10), null)}
+                  >
+                    − Débiter
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
                     onClick={() => handleUpdateUserCoins(u, parseInt(customVal || "0", 10))}
                   >
-                    Fixer GDS
-                  </Button>
-                  <Button size="sm" variant="outline" onClick={() => handleUpdateUserCoins(u, 0)}>
-                    0 GDS
+                    Fixer
                   </Button>
                 </div>
               )}
