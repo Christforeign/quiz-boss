@@ -29,6 +29,13 @@
       "when": 1791507193305,
       "tag": "0003_question_difficulty",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1792099759212,
+      "tag": "0004_migration",
+      "breakpoints": true
     }
   ]
 }

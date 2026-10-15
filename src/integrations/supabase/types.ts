@@ -402,6 +402,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      admin_adjust_coins: {
+        Args: { _delta: number; _set?: number; _user: string }
+        Returns: number
+      }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
