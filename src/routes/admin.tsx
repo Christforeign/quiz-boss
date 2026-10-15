@@ -1738,22 +1738,32 @@ function UsersAdmin() {
               </div>
 
               {u.profileId && (
-                <div className="flex items-center gap-1.5">
+                <div className="flex flex-wrap items-center gap-1.5">
                   <Input
                     type="number"
-                    min={0}
                     value={customVal}
                     onChange={(e) => setEditingCoins({ ...editingCoins, [u.id]: e.target.value })}
                     className="h-8 w-24 text-xs font-bold"
                   />
                   <Button
                     size="sm"
+                    onClick={() => adjustCoins(u, parseInt(customVal || "0", 10), null)}
+                  >
+                    + Créditer
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => adjustCoins(u, -parseInt(customVal || "0", 10), null)}
+                  >
+                    − Débiter
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
                     onClick={() => handleUpdateUserCoins(u, parseInt(customVal || "0", 10))}
                   >
-                    Fixer GDS
-                  </Button>
-                  <Button size="sm" variant="outline" onClick={() => handleUpdateUserCoins(u, 0)}>
-                    0 GDS
+                    Fixer
                   </Button>
                 </div>
               )}
