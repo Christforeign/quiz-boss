@@ -8,6 +8,7 @@ import {
   requestCrossPlatformNotificationPermission,
 } from "@/lib/site";
 import { toast } from "sonner";
+import { sfx } from "@/lib/sound";
 
 export function NotificationPrompt() {
   const [show, setShow] = useState(false);

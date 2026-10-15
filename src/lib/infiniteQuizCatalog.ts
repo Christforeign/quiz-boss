@@ -1,4 +1,22 @@
 import { HARD_QUESTIONS, type QuizQuestion } from "./hardQuestions";
+import { getAmourQuestions } from "./catalog/amour";
+import { getCultureQuestions } from "./catalog/culture";
+import { getInformatiqueQuestions } from "./catalog/informatique";
+import { getSportQuestions } from "./catalog/sport";
+import { getGeographieQuestions } from "./catalog/geographie";
+import { getMusiqueQuestions } from "./catalog/musique";
+import { getCinemaQuestions } from "./catalog/cinema";
+
+let themedCache: QuizQuestion[] | null = null;
+function getThemedQuestions(category: string): QuizQuestion[] {
+  if (!themedCache) {
+    themedCache = [];
+    for (const fn of [getAmourQuestions, getCultureQuestions, getInformatiqueQuestions, getSportQuestions, getGeographieQuestions, getMusiqueQuestions, getCinemaQuestions]) {
+      try { themedCache.push(...fn()); } catch (e) { console.warn("catalog error", e); }
+    }
+  }
+  return category === "mix" ? themedCache : themedCache.filter((q) => q.category === category);
+}
 
 /**
  * Base encyclopédique structurée permettant de générer un catalogue de +12 000 questions
@@ -1026,7 +1044,8 @@ export function selectCatalogQuestions(
   const seenQuestions = new Set<string>();
   const combined: QuizQuestion[] = [];
 
-  for (const q of randomShuffle([...dbQuestions, ...hard, ...procedural])) {
+  const themed = getThemedQuestions(category);
+  for (const q of randomShuffle([...dbQuestions, ...hard, ...themed, ...procedural])) {
     const key = q.question.trim().toLowerCase();
     if (!seenQuestions.has(key)) {
       seenQuestions.add(key);
@@ -1045,7 +1064,9 @@ export function selectCatalogQuestions(
   if (unseen.length >= 12) {
     return randomShuffle(unseen);
   }
-  return randomShuffle(pool);
+  // Catalogue presque épuisé : d'abord les inédites, puis les autres
+  const unseenSet = new Set(unseen);
+  return [...randomShuffle(unseen), ...randomShuffle(pool.filter((q) => !unseenSet.has(q)))];
 }
 
 /**
