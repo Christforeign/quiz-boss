@@ -222,6 +222,7 @@ function SetupScreen({ onStart }: { onStart: (s: Setup) => void }) {
         return () => clearTimeout(timer);
       }
     }
+    return undefined;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.search]);
 

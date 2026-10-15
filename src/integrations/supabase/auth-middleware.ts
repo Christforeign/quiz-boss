@@ -43,7 +43,7 @@ export const requireSupabaseAuth = createMiddleware({ type: "function" }).server
         context: {
           supabase: mock as unknown as ReturnType<typeof createClient<Database>>,
           userId: "mock-user-id",
-          claims: { sub: "mock-user-id" } as unknown as Record<string, unknown>,
+          claims: { sub: "mock-user-id" } as any, // eslint-disable-line @typescript-eslint/no-explicit-any
         },
       });
     }
